@@ -1,0 +1,36 @@
+scraping:
+  sources:
+    remoteok: true
+    himalayas: true
+    wellfound: false
+    we_work_remotely: false
+
+qualification:
+  min_score: 7
+  min_countries: 3
+  max_headcount: 150
+  stack_keywords:
+    - java
+    - spring boot
+    - react
+    - typescript
+    - docker
+    - postgresql
+  exclude_keywords:
+    - "us only"
+    - "must be in"
+    - "on-site"
+    - "hybrid"
+
+outreach:
+  max_drafts_per_day: 3
+  max_emails_per_week: 15
+  followup_after_days: 7
+  language: english
+
+targets:
+  regions:
+    - worldwide
+    - us
+    - canada
+    - europe
