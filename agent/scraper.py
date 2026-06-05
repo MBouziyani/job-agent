@@ -1,6 +1,4 @@
 import logging
-import re
-import time
 from urllib.parse import urlparse
 
 import requests
@@ -11,22 +9,11 @@ from db import company_exists, insert_company
 logger = logging.getLogger(__name__)
 
 REMOTEOK_API = 'https://remoteok.com/api'
-HIMALAYAS_COMPANIES = 'https://himalayas.app/companies'
+WWR_RSS = 'https://weworkremotely.com/remote-jobs.rss'
 
 _REMOTEOK_HEADERS = {
     'User-Agent': 'Mozilla/5.0',
     'Accept': 'application/json',
-}
-
-_HIMALAYAS_HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (X11; Linux x86_64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/125.0.0.0 Safari/537.36'
-    ),
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://himalayas.app/',
 }
 
 
@@ -51,11 +38,7 @@ def _strip_html(raw: str) -> str:
 def scrape_remoteok(conn, cfg: dict) -> int:
     logger.info('Scraping RemoteOK...')
     try:
-        resp = requests.get(
-            REMOTEOK_API,
-            headers=_REMOTEOK_HEADERS,
-            timeout=30,
-        )
+        resp = requests.get(REMOTEOK_API, headers=_REMOTEOK_HEADERS, timeout=30)
         resp.raise_for_status()
         jobs = resp.json()
     except Exception as exc:
@@ -65,18 +48,16 @@ def scrape_remoteok(conn, cfg: dict) -> int:
     # Record 0 is a legal notice (no 'company' key) — filter it and any incomplete entries
     jobs = [j for j in jobs if isinstance(j, dict) and j.get('company') and j.get('url')]
 
-    # Deduplicate by domain extracted from the 'url' field
-    seen_domains: set[str] = set()
+    # Deduplicate by company name slug — job 'url' points to remoteok.com, not the company
+    seen: set[str] = set()
     unique: list[tuple[dict, str]] = []
     for job in jobs:
-        parsed = urlparse(job['url'])
-        netloc = parsed.netloc.lower()
-        if netloc.startswith('www.'):
-            netloc = netloc[4:]
-        if not netloc or netloc in seen_domains:
+        slug = job['company'].lower().replace(' ', '-')
+        domain = f'{slug}.remoteok'
+        if domain in seen:
             continue
-        seen_domains.add(netloc)
-        unique.append((job, netloc))
+        seen.add(domain)
+        unique.append((job, domain))
 
     logger.info('RemoteOK raw records: %d, after dedup: %d', len(jobs), len(unique))
 
@@ -114,123 +95,73 @@ def scrape_remoteok(conn, cfg: dict) -> int:
     return new_count
 
 
-def _parse_headcount(text: str) -> int | None:
-    text = text.replace(',', '')
-    match = re.search(r'(\d+)', text)
-    return int(match.group(1)) if match else None
+def scrape_weworkremotely(conn, cfg: dict) -> int:
+    logger.info('Scraping We Work Remotely RSS...')
+    try:
+        resp = requests.get(
+            WWR_RSS,
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error('We Work Remotely request failed: %s', exc)
+        return 0
 
+    soup = BeautifulSoup(resp.content, 'xml')
+    items = soup.find_all('item')
+    logger.info('We Work Remotely raw records: %d', len(items))
 
-def scrape_himalayas(conn, cfg: dict) -> int:
-    logger.info('Scraping Himalayas...')
+    seen: set[str] = set()
     new_count = 0
-    page = 1
 
-    while page <= 50:
-        url = f'{HIMALAYAS_COMPANIES}?page={page}'
+    for item in items:
+        # Title format: "Category: Job Title at Company Name"
+        title_el = item.find('title')
+        title = title_el.get_text(strip=True) if title_el else ''
+        if ' at ' not in title:
+            continue
+        name = title.rsplit(' at ', 1)[-1].strip()
+        if not name:
+            continue
+
+        slug = name.lower().replace(' ', '-')
+        domain = f'{slug}.wwr'
+
+        if domain in seen:
+            continue
+        seen.add(domain)
+
+        if company_exists(conn, domain):
+            continue
+
+        link_el = item.find('link')
+        website = link_el.get_text(strip=True) if link_el else ''
+
+        desc_el = item.find('description')
+        raw_desc = desc_el.get_text(strip=True) if desc_el else ''
+        description = _strip_html(raw_desc)[:500] if raw_desc else ''
+
+        company_data = {
+            'name': name,
+            'domain': domain,
+            'website': website,
+            'headcount': None,
+            'countries_count': None,
+            'stack': '',
+            'description': description,
+            'source': 'weworkremotely',
+            'remote_score': 0,
+        }
+
         try:
-            resp = requests.get(url, headers=_HIMALAYAS_HEADERS, timeout=30)
-            resp.raise_for_status()
+            insert_company(conn, company_data)
+            new_count += 1
+            logger.debug('Added %s (%s)', name, domain)
         except Exception as exc:
-            logger.error('Himalayas page %d failed: %s', page, exc)
-            break
+            logger.error('Insert failed for %s: %s', domain, exc)
 
-        soup = BeautifulSoup(resp.text, 'lxml')
-
-        # Himalayas renders company cards — try selectors in order of specificity
-        cards = (
-            soup.select('li[data-company-slug]')
-            or soup.select('div[data-company-slug]')
-            or soup.select('ul.companies li')
-            or soup.select('div.companies > div')
-            or soup.select('article')
-        )
-
-        if not cards:
-            logger.info('Himalayas page %d: no cards found, stopping', page)
-            break
-
-        for card in cards:
-            # Name — prefer heading elements, fall back to named class
-            name_el = (
-                card.select_one('h2')
-                or card.select_one('h3')
-                or card.select_one('[class*="name"]')
-            )
-            name = name_el.get_text(strip=True) if name_el else ''
-            if not name:
-                continue
-
-            # Website — prefer external href, fall back to Himalayas profile URL
-            website_href = ''
-            ext_link = card.select_one('a[href^="http"]')
-            int_link = card.select_one('a[href^="/companies/"]')
-            if ext_link:
-                website_href = ext_link.get('href', '')
-            elif int_link:
-                website_href = 'https://himalayas.app' + int_link.get('href', '')
-
-            domain = extract_domain(website_href) if website_href else None
-
-            # Last resort: synthesise a domain from the data-slug attribute
-            if not domain:
-                slug = card.get('data-company-slug', '')
-                domain = f'{slug}.himalayas' if slug else None
-
-            if not domain:
-                continue
-
-            if company_exists(conn, domain):
-                continue
-
-            # Description / tagline
-            desc_el = (
-                card.select_one('p')
-                or card.select_one('[class*="tagline"]')
-                or card.select_one('[class*="description"]')
-            )
-            description = desc_el.get_text(strip=True)[:500] if desc_el else ''
-
-            # Team size — scan all short text nodes for "employee" / "people" keywords
-            headcount = None
-            for el in card.select('span, li, div, p'):
-                txt = el.get_text(strip=True)
-                if len(txt) < 60 and ('employee' in txt.lower() or 'people' in txt.lower()):
-                    headcount = _parse_headcount(txt)
-                    if headcount:
-                        break
-
-            company_data = {
-                'name': name,
-                'domain': domain,
-                'website': website_href,
-                'headcount': headcount,
-                'countries_count': None,
-                'stack': '',
-                'description': description,
-                'source': 'himalayas',
-                'remote_score': 0,
-            }
-
-            try:
-                insert_company(conn, company_data)
-                new_count += 1
-                logger.debug('Added %s (%s)', name, domain)
-            except Exception as exc:
-                logger.error('Insert failed for %s: %s', domain, exc)
-
-        # Stop when no next-page link exists or this page had very few results
-        next_link = (
-            soup.select_one('a[rel="next"]')
-            or soup.select_one('a[aria-label="Next"]')
-            or soup.select_one('a[aria-label="next"]')
-        )
-        if not next_link and len(cards) < 10:
-            break
-
-        page += 1
-        time.sleep(1)  # be polite between pages
-
-    logger.info('Himalayas: added %d new companies', new_count)
+    logger.info('We Work Remotely: added %d new companies', new_count)
     return new_count
 
 
@@ -241,7 +172,7 @@ def run_all(conn, cfg: dict) -> dict[str, int]:
     if sources.get('remoteok', True):
         results['remoteok'] = scrape_remoteok(conn, cfg)
 
-    if sources.get('himalayas', True):
-        results['himalayas'] = scrape_himalayas(conn, cfg)
+    if sources.get('we_work_remotely', True):
+        results['we_work_remotely'] = scrape_weworkremotely(conn, cfg)
 
     return results

@@ -5,31 +5,36 @@
 ### What was built
 - `agent/db.py` — SQLite schema init: companies, contacts, emails, followups tables
 - `agent/config.py` — loads `data/config.yml` via `load_config()`
-- `agent/scraper.py` — RemoteOK (JSON API) + Himalayas (BeautifulSoup) scrapers with deduplication
+- `agent/scraper.py` — RemoteOK (JSON API) + We Work Remotely (RSS) scrapers with deduplication
 - `agent/main.py` — entry point: infinite loop, runs pipeline then `time.sleep(86400)`
 - `docker-compose.yml` — agent + dashboard containers skeleton, `/data` shared volume
 
 ### What works
-- RemoteOK scraper hits the JSON API, deduplicates by domain, inserts new companies
-- Himalayas scraper paginates up to 50 pages, parses company cards, extracts headcount
+- RemoteOK: hits JSON API, skips legal notice record (no `company` key), deduplicates by
+  company-name slug (`{name.lower().replace(' ','-')}.remoteok`), logs raw/dedup counts
+- We Work Remotely: fetches RSS at `https://weworkremotely.com/remote-jobs.rss`, parses with
+  BeautifulSoup xml parser, extracts company from title ("... at Company Name"), deduplicates
+  by `{slug}.wwr` key — no auth, no JS, no blocking
 - Deduplication: `company_exists(conn, domain)` checked before every insert
 - `main.py` loops forever — run pipeline, sleep 24h, repeat (APScheduler replaces this in Session 6)
 
+### Confirmed RemoteOK API fields (verified via curl)
+`slug, id, epoch, date, company, company_logo, position, tags, description, location, apply_url, salary_min, salary_max, logo, url`
+Note: `url` is the remoteok.com job page URL — DO NOT use for domain extraction.
+Use `company` field slugified as the unique key.
+
 ### Bugs fixed this session
-- `scraper.py` referenced undefined `_HEADERS` in both scrapers (silently caught by `except`, returned 0).
-  Fixed: `scrape_remoteok` now uses `_REMOTEOK_HEADERS`; `scrape_himalayas` uses `_HIMALAYAS_HEADERS`.
-- `main.py` exited after one run. Fixed: wrapped in `while True` + `time.sleep(86400)`.
-- RemoteOK parser used wrong field names and guessed at domain extraction strategy.
-  Confirmed API fields via curl: `slug, id, epoch, date, company, company_logo, position,
-  tags, description, location, apply_url, salary_min, salary_max, logo, url`.
-  Fixed: skip record 0 by checking for absent `company` key (legal notice); extract domain
-  from `url` field via `urlparse(...).netloc`; dedup by domain; log `raw records: X, after dedup: Y`.
+- `scraper.py` referenced undefined `_HEADERS` — silently returned 0. Fixed.
+- `main.py` exited after one run. Fixed: `while True` + `time.sleep(86400)`.
+- RemoteOK: `url` field points to remoteok.com → dedup collapsed all records to 1.
+  Fixed: use `company.lower().replace(' ', '-')` slug as unique key.
+- Himalayas returned 403 consistently — replaced entirely with We Work Remotely RSS scraper.
 - `docker-compose.yml` had obsolete `version: '3.8'` top-level key — removed.
 
 ### Not yet built (do NOT re-implement)
 - qualifier.py, finder.py, mailer.py, followup.py — Session 2+
 - Flask dashboard — Session 3
-- Wellfound + We Work Remotely scrapers — deferred (need Playwright)
+- Wellfound scraper — deferred (requires Playwright)
 
 ---
 
