@@ -1,5 +1,6 @@
 import logging
 import sys
+import time
 
 from config import load_config
 from db import get_conn, init_db
@@ -13,9 +14,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SLEEP_SECONDS = 86400  # replaced by APScheduler in Session 6
 
-def main() -> None:
-    logger.info('Job agent starting (Session 1 — scraper)')
+
+def run_pipeline() -> None:
     cfg = load_config()
     init_db()
     conn = get_conn()
@@ -25,6 +27,14 @@ def main() -> None:
         logger.info('Scrape complete — new companies by source: %s (total=%d)', results, total)
     finally:
         conn.close()
+
+
+def main() -> None:
+    logger.info('Job agent starting')
+    while True:
+        run_pipeline()
+        logger.info('Sleeping %ds until next run', SLEEP_SECONDS)
+        time.sleep(SLEEP_SECONDS)
 
 
 if __name__ == '__main__':

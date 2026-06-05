@@ -13,13 +13,20 @@ logger = logging.getLogger(__name__)
 REMOTEOK_API = 'https://remoteok.com/api'
 HIMALAYAS_COMPANIES = 'https://himalayas.app/companies'
 
-_HEADERS = {
+_REMOTEOK_HEADERS = {
+    'User-Agent': 'Mozilla/5.0',
+    'Accept': 'application/json',
+}
+
+_HIMALAYAS_HEADERS = {
     'User-Agent': (
         'Mozilla/5.0 (X11; Linux x86_64) '
         'AppleWebKit/537.36 (KHTML, like Gecko) '
         'Chrome/125.0.0.0 Safari/537.36'
     ),
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://himalayas.app/',
 }
 
 
@@ -46,7 +53,7 @@ def scrape_remoteok(conn, cfg: dict) -> int:
     try:
         resp = requests.get(
             REMOTEOK_API,
-            headers={**_HEADERS, 'Accept': 'application/json'},
+            headers=_REMOTEOK_HEADERS,
             timeout=30,
         )
         resp.raise_for_status()
@@ -122,7 +129,7 @@ def scrape_himalayas(conn, cfg: dict) -> int:
     while page <= 50:
         url = f'{HIMALAYAS_COMPANIES}?page={page}'
         try:
-            resp = requests.get(url, headers=_HEADERS, timeout=30)
+            resp = requests.get(url, headers=_HIMALAYAS_HEADERS, timeout=30)
             resp.raise_for_status()
         except Exception as exc:
             logger.error('Himalayas page %d failed: %s', page, exc)

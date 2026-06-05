@@ -1,5 +1,32 @@
 # CLAUDE.md — Job Search Agent
 
+## Session 1 status (completed 2026-06-05)
+
+### What was built
+- `agent/db.py` — SQLite schema init: companies, contacts, emails, followups tables
+- `agent/config.py` — loads `data/config.yml` via `load_config()`
+- `agent/scraper.py` — RemoteOK (JSON API) + Himalayas (BeautifulSoup) scrapers with deduplication
+- `agent/main.py` — entry point: infinite loop, runs pipeline then `time.sleep(86400)`
+- `docker-compose.yml` — agent + dashboard containers skeleton, `/data` shared volume
+
+### What works
+- RemoteOK scraper hits the JSON API, deduplicates by domain, inserts new companies
+- Himalayas scraper paginates up to 50 pages, parses company cards, extracts headcount
+- Deduplication: `company_exists(conn, domain)` checked before every insert
+- `main.py` loops forever — run pipeline, sleep 24h, repeat (APScheduler replaces this in Session 6)
+
+### Bugs fixed this session
+- `scraper.py` referenced undefined `_HEADERS` in both scrapers (silently caught by `except`, returned 0).
+  Fixed: `scrape_remoteok` now uses `_REMOTEOK_HEADERS`; `scrape_himalayas` uses `_HIMALAYAS_HEADERS`.
+- `main.py` exited after one run. Fixed: wrapped in `while True` + `time.sleep(86400)`.
+
+### Not yet built (do NOT re-implement)
+- qualifier.py, finder.py, mailer.py, followup.py — Session 2+
+- Flask dashboard — Session 3
+- Wellfound + We Work Remotely scrapers — deferred (need Playwright)
+
+---
+
 ## What this is
 A proactive cold outreach system for Mohammed Bouziyani.
 Junior full-stack dev (Java/Spring Boot + React), based in Morocco,
