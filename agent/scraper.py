@@ -40,6 +40,7 @@ def scrape_remoteok(conn, cfg: dict) -> int:
     try:
         resp = requests.get(REMOTEOK_API, headers=_REMOTEOK_HEADERS, timeout=30)
         resp.raise_for_status()
+        resp.encoding = 'utf-8'  # API serves UTF-8; override any wrong Content-Type charset
         jobs = resp.json()
     except Exception as exc:
         logger.error('RemoteOK request failed: %s', exc)
@@ -48,25 +49,23 @@ def scrape_remoteok(conn, cfg: dict) -> int:
     # Record 0 is a legal notice (no 'company' key) — filter it and any incomplete entries
     jobs = [j for j in jobs if isinstance(j, dict) and j.get('company') and j.get('url')]
 
-    # Deduplicate by company name slug — job 'url' points to remoteok.com, not the company
+    # Deduplicate by company name within this batch
     seen: set[str] = set()
     unique: list[tuple[dict, str]] = []
     for job in jobs:
-        slug = job['company'].lower().replace(' ', '-')
-        domain = f'{slug}.remoteok'
-        if domain in seen:
+        name = job['company'].strip()
+        if not name or name in seen:
             continue
-        seen.add(domain)
-        unique.append((job, domain))
+        seen.add(name)
+        unique.append((job, name))
 
     logger.info('RemoteOK raw records: %d, after dedup: %d', len(jobs), len(unique))
 
     new_count = 0
-    for job, domain in unique:
-        if company_exists(conn, domain):
+    for job, name in unique:
+        if company_exists(conn, name, 'remoteok'):
             continue
 
-        name = job['company'].strip()
         tags = job.get('tags') or []
         stack = ','.join(str(t) for t in tags)
         raw_desc = job.get('description') or ''
@@ -74,7 +73,7 @@ def scrape_remoteok(conn, cfg: dict) -> int:
 
         company_data = {
             'name': name,
-            'domain': domain,
+            'domain': None,  # finder.py (Session 4) will discover real domain via Hunter.io
             'website': job.get('apply_url') or job['url'],
             'headcount': None,
             'countries_count': None,
@@ -87,9 +86,9 @@ def scrape_remoteok(conn, cfg: dict) -> int:
         try:
             insert_company(conn, company_data)
             new_count += 1
-            logger.debug('Added %s (%s)', name, domain)
+            logger.debug('Added %s', name)
         except Exception as exc:
-            logger.error('Insert failed for %s: %s', domain, exc)
+            logger.error('Insert failed for %s: %s', name, exc)
 
     logger.info('RemoteOK: added %d new companies', new_count)
     return new_count
@@ -125,14 +124,11 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
         if not name:
             continue
 
-        slug = name.lower().replace(' ', '-')
-        domain = f'{slug}.wwr'
-
-        if domain in seen:
+        if name in seen:
             continue
-        seen.add(domain)
+        seen.add(name)
 
-        if company_exists(conn, domain):
+        if company_exists(conn, name, 'weworkremotely'):
             continue
 
         link_el = item.find('link')
@@ -144,7 +140,7 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
 
         company_data = {
             'name': name,
-            'domain': domain,
+            'domain': None,  # finder.py (Session 4) will discover real domain via Hunter.io
             'website': website,
             'headcount': None,
             'countries_count': None,
@@ -157,9 +153,9 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
         try:
             insert_company(conn, company_data)
             new_count += 1
-            logger.debug('Added %s (%s)', name, domain)
+            logger.debug('Added %s', name)
         except Exception as exc:
-            logger.error('Insert failed for %s: %s', domain, exc)
+            logger.error('Insert failed for %s: %s', name, exc)
 
     logger.info('We Work Remotely: added %d new companies', new_count)
     return new_count

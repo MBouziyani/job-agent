@@ -23,7 +23,7 @@ def init_db(db_path: Path = DB_PATH) -> None:
             CREATE TABLE IF NOT EXISTS companies (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 name            TEXT NOT NULL,
-                domain          TEXT UNIQUE NOT NULL,
+                domain          TEXT,
                 website         TEXT,
                 headcount       INTEGER,
                 countries_count INTEGER,
@@ -31,7 +31,8 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 description     TEXT,
                 source          TEXT,
                 remote_score    REAL DEFAULT 0,
-                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(name, source)
             );
 
             CREATE TABLE IF NOT EXISTS contacts (
@@ -73,9 +74,9 @@ def init_db(db_path: Path = DB_PATH) -> None:
     conn.close()
 
 
-def company_exists(conn: sqlite3.Connection, domain: str) -> bool:
+def company_exists(conn: sqlite3.Connection, name: str, source: str) -> bool:
     row = conn.execute(
-        'SELECT 1 FROM companies WHERE domain = ?', (domain,)
+        'SELECT 1 FROM companies WHERE name = ? AND source = ?', (name, source)
     ).fetchone()
     return row is not None
 

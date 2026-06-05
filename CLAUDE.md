@@ -10,24 +10,29 @@
 - `docker-compose.yml` — agent + dashboard containers skeleton, `/data` shared volume
 
 ### What works
-- RemoteOK: hits JSON API, skips legal notice record (no `company` key), deduplicates by
-  company-name slug (`{name.lower().replace(' ','-')}.remoteok`), logs raw/dedup counts
-- We Work Remotely: fetches RSS at `https://weworkremotely.com/remote-jobs.rss`, parses with
-  BeautifulSoup xml parser, extracts company from title ("... at Company Name"), deduplicates
-  by `{slug}.wwr` key — no auth, no JS, no blocking
-- Deduplication: `company_exists(conn, domain)` checked before every insert
+- RemoteOK: hits JSON API, sets `resp.encoding='utf-8'`, skips legal notice (no `company` key),
+  deduplicates by company name within batch, stores `domain=None` (real domain found in Session 4)
+- We Work Remotely: fetches RSS, parses with BeautifulSoup xml parser, extracts company from
+  title ("... at Company Name"), deduplicates by name — no auth, no JS, no blocking
+- Deduplication: `company_exists(conn, name, source)` checks `UNIQUE(name, source)` in DB
 - `main.py` loops forever — run pipeline, sleep 24h, repeat (APScheduler replaces this in Session 6)
+
+### DB schema decisions
+- `companies.domain` is nullable — RemoteOK and WWR have no reliable company website field.
+  Real domains will be discovered by `finder.py` in Session 4 via Hunter.io company search.
+- Unique constraint is `UNIQUE(name, source)` — not on `domain`.
+- **If schema changed on an existing DB**: delete `/data/jobs.db` and restart to recreate.
 
 ### Confirmed RemoteOK API fields (verified via curl)
 `slug, id, epoch, date, company, company_logo, position, tags, description, location, apply_url, salary_min, salary_max, logo, url`
-Note: `url` is the remoteok.com job page URL — DO NOT use for domain extraction.
-Use `company` field slugified as the unique key.
+Note: `url` is the remoteok.com job page URL — DO NOT use for domain/dedup. Use `company` name.
 
 ### Bugs fixed this session
 - `scraper.py` referenced undefined `_HEADERS` — silently returned 0. Fixed.
 - `main.py` exited after one run. Fixed: `while True` + `time.sleep(86400)`.
-- RemoteOK: `url` field points to remoteok.com → dedup collapsed all records to 1.
-  Fixed: use `company.lower().replace(' ', '-')` slug as unique key.
+- RemoteOK: `url` field points to remoteok.com → dedup collapsed all records to 1. Fixed.
+- RemoteOK: UTF-8 mojibake on company names — fixed with `resp.encoding = 'utf-8'` before `.json()`.
+- RemoteOK: fake `{slug}.remoteok` domains — removed; `domain=None` now, Hunter.io fills it later.
 - Himalayas returned 403 consistently — replaced entirely with We Work Remotely RSS scraper.
 - `docker-compose.yml` had obsolete `version: '3.8'` top-level key — removed.
 
