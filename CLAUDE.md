@@ -141,8 +141,65 @@ Note: `url` is a remoteok.com job page URL — DO NOT use for domain/dedup. Use 
 - stat-grid widened from 4 to 5 columns to fit the 10 stat cards in two rows of 5
 
 ### Not yet built (do NOT re-implement)
-- finder.py, mailer.py, followup.py — Session 5+
-- review.html (email approve/reject UI) — Session 5
+- mailer.py, followup.py — Session 6+
+- review.html (email approve/reject UI) — Session 6
+
+---
+
+## Session 5 status (completed 2026-06-05)
+
+### What was built
+- `agent/finder.py` — Hunter.io domain-search integration; finds best contact per qualified company
+- `agent/db.py` — added `get_qualified_without_contacts(conn)` and `insert_contact(conn, ...)` helpers
+- `agent/main.py` — pipeline now runs scraper → qualifier → finder in sequence
+- `dashboard/app.py` — added `/run-finder` POST route for manual trigger; added `HUNTER_API` +
+  `_tier()` + `_best_contact()` + `_hunter_search()` helpers (self-contained; agent/finder.py
+  is in a separate container and cannot be imported)
+- `dashboard/templates/pipeline.html` — "Run Finder" button (top-right); success/error banner
+  shown after finder runs (via `?msg=` query param redirect)
+- `dashboard/requirements.txt` — added `requests>=2.32`
+
+### What works
+- `finder.run(conn, cfg)`: queries all `qualified=1` companies that have a `domain` and no row
+  yet in `contacts`; for each calls Hunter.io domain-search (limit=10); picks best contact via
+  `_best_contact()` and writes to `contacts` table
+- Role priority (CTO > Head/VP of Engineering > Engineering Manager > Tech Lead > any personal);
+  within same tier, prefers personal-type addresses over generic, then sorts by confidence desc
+- `verified = confidence > 70` — stored as `INTEGER 0/1` in `contacts.verified`
+- `HUNTER_API_KEY` checked at startup — logs error and returns early if missing
+- 1 s sleep between Hunter.io calls (free plan: 25 req/month; polite pace)
+- `/run-finder` in dashboard: identical Hunter.io + ranking logic; runs synchronously and
+  redirects to `/pipeline?msg=Finder done — N contacts found (M processed, K skipped)`
+- `Run Finder` button on pipeline page triggers the route; success banner shows on redirect
+
+### Role priority tiers (CTO first, Developer last)
+```
+Tier 0: cto, chief technology officer, chief technical officer
+Tier 1: co-founder, cofounder, co founder
+Tier 2: head of engineering, vp of engineering, vp engineering, director of engineering
+Tier 3: engineering manager, technical manager, tech manager
+Tier 4: tech lead, technical lead, lead engineer, lead developer, staff engineer
+Tier 5: developer, software engineer, software developer
+Tier 6: (any other / no position — last resort)
+```
+Within same tier: personal-type email > generic; then confidence descending.
+`verified = confidence > 70` (strictly greater, not >=)
+
+### DB helpers added in Session 5
+- `get_qualified_without_contact(conn)` — `qualified=1 AND domain IS NOT NULL AND id NOT IN contacts`
+- `insert_contact(conn, company_id, name, role, email, verified)` — `source='hunter'` hardcoded
+
+### Design decisions
+- Self-contained Hunter.io logic in `dashboard/app.py` (duplicates ~40 lines from finder.py)
+  because dashboard and agent containers don't share a filesystem — importing agent code is
+  impossible without a shared volume or HTTP API
+- `/run-finder` runs synchronously in the Flask request — acceptable for a personal tool with
+  small batches; a background thread would add complexity with no benefit at this scale
+- `_best_contact` sorts by: (1) personal > generic type, (2) role tier, (3) confidence desc
+  so the best personal email for the most senior role always wins
+
+### Not yet built (do NOT re-implement)
+- mailer.py, review.html, followup.py — Session 6+
 
 ---
 
@@ -187,8 +244,8 @@ job-agent/
 │   ├── main.py           # entry point — scrape → qualify loop, sleep 24h
 │   ├── scraper.py        # RemoteOK + We Work Remotely + Clearbit domain lookup
 │   ├── qualifier.py      # Claude haiku scoring, writes remote_score + qualified
-│   ├── finder.py         # NOT YET BUILT — Session 4
-│   ├── mailer.py         # NOT YET BUILT — Session 5
+│   ├── finder.py         # Hunter.io domain search → contacts table
+│   ├── mailer.py         # NOT YET BUILT — Session 6
 │   ├── followup.py       # NOT YET BUILT — Session 6
 │   └── config.py         # loads /data/config.yml
 ├── dashboard/
@@ -217,7 +274,7 @@ created_at
 UNIQUE(name, source)
 ```
 - `qualified`: NULL = not scored, 1 = passed, 0 = rejected
-- `domain`: NULL until Clearbit finds it; finder.py (Session 4) handles remaining NULLs
+- `domain`: NULL until Clearbit finds it; finder.py skips companies where domain IS NULL
 
 ### contacts
 ```
@@ -279,12 +336,12 @@ GMAIL_REFRESH_TOKEN → mailer.py sending
 FLASK_SECRET_KEY    → dashboard sessions
 ```
 
-## Pipeline flow (Sessions 1–4 implemented)
+## Pipeline flow (Sessions 1–5 implemented)
 ```
 1. scraper.py   → fetch new companies, dedup, Clearbit domain, insert to DB  ✓
 2. qualifier.py → score unqualified companies via Claude haiku, update DB     ✓
-3. finder.py    → Hunter.io lookup for qualified companies with NULL domain   (Session 5)
-4. mailer.py    → generate drafts via Claude sonnet, status='draft'           (Session 5)
+3. finder.py    → Hunter.io lookup for qualified companies with a domain      ✓
+4. mailer.py    → generate drafts via Claude sonnet, status='draft'           (Session 6)
 5. followup.py  → check emails sent 7 days ago, queue follow-ups              (Session 6)
 ```
 
@@ -332,7 +389,8 @@ Session 1: scraper.py + db.py + docker-compose skeleton                        �
 Session 2: qualifier.py + Claude API + config.py                               ✓ done
 Session 3: Flask dashboard (pipeline / stats / settings)                       ✓ done
 Session 4: dashboard enhancements — All Scraped column, /companies, force-qualify ✓ done
-Session 5: finder.py + Hunter.io integration + mailer.py + review.html + Gmail OAuth
+Session 5: finder.py + Hunter.io integration                                  ✓ done
+Session 6: mailer.py + review.html + Gmail OAuth
 Session 6: followup.py + APScheduler wiring
 Session 7: Hermes Agent container + Telegram bot
 ```

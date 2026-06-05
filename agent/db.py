@@ -127,3 +127,32 @@ def update_company_qualification(
         (score, 1 if qualified else 0, company_id),
     )
     conn.commit()
+
+
+def get_qualified_without_contact(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("""
+        SELECT * FROM companies
+        WHERE qualified = 1
+          AND domain IS NOT NULL
+          AND id NOT IN (SELECT DISTINCT company_id FROM contacts)
+        ORDER BY remote_score DESC
+    """).fetchall()
+    return [dict(row) for row in rows]
+
+
+def insert_contact(
+    conn: sqlite3.Connection,
+    company_id: int,
+    name: str | None,
+    role: str | None,
+    email: str,
+    verified: bool,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO contacts (company_id, name, role, email, source, verified)
+        VALUES (?, ?, ?, ?, 'hunter', ?)
+        """,
+        (company_id, name, role, email, 1 if verified else 0),
+    )
+    conn.commit()

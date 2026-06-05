@@ -1,12 +1,16 @@
 import os
 import sqlite3
+import time
 from pathlib import Path
 
+import requests
 import yaml
 from flask import Flask, redirect, render_template, request, url_for
 
 DB_PATH = Path('/data/jobs.db')
 CONFIG_PATH = Path('/data/config.yml')
+
+HUNTER_API = 'https://api.hunter.io/v2/domain-search'
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev')
@@ -18,6 +22,57 @@ def _db():
     return conn
 
 
+# ── Hunter.io helpers (self-contained — agent/finder.py is in a separate container) ──
+
+_ROLE_TIERS = [
+    ['cto', 'chief technology officer', 'chief technical officer'],
+    ['co-founder', 'cofounder', 'co founder'],
+    [
+        'head of engineering', 'vp of engineering', 'vp engineering',
+        'director of engineering', 'engineering director',
+    ],
+    ['engineering manager', 'technical manager', 'tech manager'],
+    ['tech lead', 'technical lead', 'lead engineer', 'lead developer', 'staff engineer'],
+    ['developer', 'software engineer', 'software developer'],
+]
+
+
+def _tier(position: str) -> int:
+    if not position:
+        return len(_ROLE_TIERS)
+    p = position.lower()
+    for i, terms in enumerate(_ROLE_TIERS):
+        if any(t in p for t in terms):
+            return i
+    return len(_ROLE_TIERS)
+
+
+def _best_contact(emails: list) -> dict | None:
+    candidates = [e for e in emails if e.get('value')]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda e: (
+        0 if e.get('type') == 'personal' else 1,
+        _tier(e.get('position', '')),
+        -(e.get('confidence') or 0),
+    ))
+    return candidates[0]
+
+
+def _hunter_search(domain: str, api_key: str) -> list:
+    try:
+        resp = requests.get(
+            HUNTER_API,
+            params={'domain': domain, 'api_key': api_key, 'limit': 10},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return resp.json().get('data', {}).get('emails', [])
+    except requests.RequestException:
+        pass
+    return []
+
+
 # ── pipeline ──────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -27,6 +82,7 @@ def index():
 
 @app.route('/pipeline')
 def pipeline():
+    msg = request.args.get('msg')
     try:
         conn = _db()
         discovered = conn.execute(
@@ -68,7 +124,7 @@ def pipeline():
 
         conn.close()
     except Exception as exc:
-        return render_template('pipeline.html', error=str(exc),
+        return render_template('pipeline.html', error=str(exc), msg=None,
                                discovered=[], qualified=[],
                                email_found=[], contacted=[], all_scraped=[])
 
@@ -78,7 +134,64 @@ def pipeline():
                            email_found=email_found,
                            contacted=contacted,
                            all_scraped=all_scraped,
+                           msg=msg,
                            error=None)
+
+
+# ── finder trigger ─────────────────────────────────────────────────────────────
+
+@app.route('/run-finder', methods=['POST'])
+def run_finder():
+    api_key = os.environ.get('HUNTER_API_KEY')
+    if not api_key:
+        return redirect(url_for('pipeline', msg='HUNTER_API_KEY not set'))
+
+    try:
+        conn = _db()
+        targets = conn.execute("""
+            SELECT * FROM companies
+            WHERE qualified = 1
+              AND domain IS NOT NULL
+              AND id NOT IN (SELECT DISTINCT company_id FROM contacts)
+            ORDER BY remote_score DESC
+        """).fetchall()
+
+        processed = found = skipped = 0
+
+        for company in targets:
+            emails = _hunter_search(company['domain'], api_key)
+            processed += 1
+
+            contact = _best_contact(emails)
+            if not contact:
+                skipped += 1
+                time.sleep(1)
+                continue
+
+            first = (contact.get('first_name') or '').strip()
+            last  = (contact.get('last_name')  or '').strip()
+            name  = f'{first} {last}'.strip() or None
+            role  = contact.get('position') or None
+            email = contact['value']
+            verified = (contact.get('confidence') or 0) > 70
+
+            conn.execute(
+                """
+                INSERT INTO contacts (company_id, name, role, email, source, verified)
+                VALUES (?, ?, ?, ?, 'hunter', ?)
+                """,
+                (company['id'], name, role, email, 1 if verified else 0),
+            )
+            conn.commit()
+            found += 1
+            time.sleep(1)
+
+        conn.close()
+    except Exception as exc:
+        return redirect(url_for('pipeline', msg=f'Finder error: {exc}'))
+
+    msg = f'Finder done — {found} contacts found ({processed} processed, {skipped} skipped)'
+    return redirect(url_for('pipeline', msg=msg))
 
 
 # ── companies ─────────────────────────────────────────────────────────────────

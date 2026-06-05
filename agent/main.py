@@ -4,6 +4,7 @@ import time
 
 from config import load_config
 from db import get_conn, init_db
+from finder import run as find_contacts
 from qualifier import run as qualify
 from scraper import run_all
 
@@ -30,6 +31,9 @@ def run_pipeline() -> None:
         )
         qual_results = qualify(conn, cfg)
         logger.info('Qualification complete — %s', qual_results)
+
+        finder_results = find_contacts(conn, cfg)
+        logger.info('Finder complete — %s', finder_results)
     finally:
         conn.close()
 
