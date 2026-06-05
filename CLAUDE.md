@@ -10,16 +10,19 @@
 - `docker-compose.yml` — agent + dashboard containers skeleton, `/data` shared volume
 
 ### What works
-- RemoteOK: hits JSON API, sets `resp.encoding='utf-8'`, skips legal notice (no `company` key),
-  deduplicates by company name within batch, stores `domain=None` (real domain found in Session 4)
+- RemoteOK: hits JSON API, fixes encoding with `resp.encoding='utf-8'` + `_fix_encoding()` per name,
+  skips legal notice (no `company` key), deduplicates by name, stores `domain=None` initially,
+  then immediately calls Clearbit Autocomplete to discover real domain and updates the row
 - We Work Remotely: fetches RSS, parses with BeautifulSoup xml parser, extracts company from
-  title ("... at Company Name"), deduplicates by name — no auth, no JS, no blocking
+  title ("... at Company Name"), same Clearbit lookup after insert — no auth, no JS, no blocking
+- Clearbit Autocomplete: `https://autocomplete.clearbit.com/v1/companies/suggest?query=NAME`
+  free, no key, returns `[{domain, name, logo}, ...]` — take `results[0].domain` if present
 - Deduplication: `company_exists(conn, name, source)` checks `UNIQUE(name, source)` in DB
 - `main.py` loops forever — run pipeline, sleep 24h, repeat (APScheduler replaces this in Session 6)
 
 ### DB schema decisions
-- `companies.domain` is nullable — RemoteOK and WWR have no reliable company website field.
-  Real domains will be discovered by `finder.py` in Session 4 via Hunter.io company search.
+- `companies.domain` is nullable — populated by Clearbit at scrape time when found; NULL remainder
+  handled by `finder.py` in Session 4 via Hunter.io company search.
 - Unique constraint is `UNIQUE(name, source)` — not on `domain`.
 - **If schema changed on an existing DB**: delete `/data/jobs.db` and restart to recreate.
 
@@ -31,8 +34,9 @@ Note: `url` is the remoteok.com job page URL — DO NOT use for domain/dedup. Us
 - `scraper.py` referenced undefined `_HEADERS` — silently returned 0. Fixed.
 - `main.py` exited after one run. Fixed: `while True` + `time.sleep(86400)`.
 - RemoteOK: `url` field points to remoteok.com → dedup collapsed all records to 1. Fixed.
-- RemoteOK: UTF-8 mojibake on company names — fixed with `resp.encoding = 'utf-8'` before `.json()`.
-- RemoteOK: fake `{slug}.remoteok` domains — removed; `domain=None` now, Hunter.io fills it later.
+- RemoteOK: UTF-8 mojibake on company names — fixed with `resp.encoding='utf-8'` AND
+  `_fix_encoding(s)` helper: `s.encode('latin-1').decode('utf-8')` catches strings already mangled.
+- RemoteOK: fake `{slug}.remoteok` domains — removed; Clearbit fills real domain post-insert.
 - Himalayas returned 403 consistently — replaced entirely with We Work Remotely RSS scraper.
 - `docker-compose.yml` had obsolete `version: '3.8'` top-level key — removed.
 

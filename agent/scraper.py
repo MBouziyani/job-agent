@@ -1,15 +1,17 @@
 import logging
+import time
 from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
-from db import company_exists, insert_company
+from db import company_exists, insert_company, update_company_domain
 
 logger = logging.getLogger(__name__)
 
 REMOTEOK_API = 'https://remoteok.com/api'
 WWR_RSS = 'https://weworkremotely.com/remote-jobs.rss'
+CLEARBIT_SUGGEST = 'https://autocomplete.clearbit.com/v1/companies/suggest'
 
 _REMOTEOK_HEADERS = {
     'User-Agent': 'Mozilla/5.0',
@@ -35,12 +37,38 @@ def _strip_html(raw: str) -> str:
     return BeautifulSoup(raw, 'lxml').get_text(' ', strip=True)
 
 
+def _fix_encoding(s: str) -> str:
+    """Fix UTF-8 bytes that were decoded as latin-1 (e.g. 'NestlÃ©' → 'Nestlé')."""
+    try:
+        return s.encode('latin-1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return s
+
+
+def _clearbit_domain(name: str) -> str | None:
+    """Clearbit Autocomplete lookup — free, no API key needed."""
+    try:
+        resp = requests.get(
+            CLEARBIT_SUGGEST,
+            params={'query': name},
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+        if results:
+            return results[0].get('domain') or None
+    except Exception as exc:
+        logger.debug('Clearbit lookup failed for %s: %s', name, exc)
+    return None
+
+
 def scrape_remoteok(conn, cfg: dict) -> int:
     logger.info('Scraping RemoteOK...')
     try:
         resp = requests.get(REMOTEOK_API, headers=_REMOTEOK_HEADERS, timeout=30)
         resp.raise_for_status()
-        resp.encoding = 'utf-8'  # API serves UTF-8; override any wrong Content-Type charset
+        resp.encoding = 'utf-8'  # override wrong Content-Type charset before .json()
         jobs = resp.json()
     except Exception as exc:
         logger.error('RemoteOK request failed: %s', exc)
@@ -53,7 +81,7 @@ def scrape_remoteok(conn, cfg: dict) -> int:
     seen: set[str] = set()
     unique: list[tuple[dict, str]] = []
     for job in jobs:
-        name = job['company'].strip()
+        name = _fix_encoding(job['company'].strip())
         if not name or name in seen:
             continue
         seen.add(name)
@@ -73,7 +101,7 @@ def scrape_remoteok(conn, cfg: dict) -> int:
 
         company_data = {
             'name': name,
-            'domain': None,  # finder.py (Session 4) will discover real domain via Hunter.io
+            'domain': None,
             'website': job.get('apply_url') or job['url'],
             'headcount': None,
             'countries_count': None,
@@ -84,9 +112,13 @@ def scrape_remoteok(conn, cfg: dict) -> int:
         }
 
         try:
-            insert_company(conn, company_data)
+            row_id = insert_company(conn, company_data)
             new_count += 1
-            logger.debug('Added %s', name)
+            domain = _clearbit_domain(name)
+            if domain:
+                update_company_domain(conn, row_id, domain)
+            logger.debug('Added %s%s', name, f' → {domain}' if domain else '')
+            time.sleep(0.2)
         except Exception as exc:
             logger.error('Insert failed for %s: %s', name, exc)
 
@@ -120,7 +152,7 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
         title = title_el.get_text(strip=True) if title_el else ''
         if ' at ' not in title:
             continue
-        name = title.rsplit(' at ', 1)[-1].strip()
+        name = _fix_encoding(title.rsplit(' at ', 1)[-1].strip())
         if not name:
             continue
 
@@ -140,7 +172,7 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
 
         company_data = {
             'name': name,
-            'domain': None,  # finder.py (Session 4) will discover real domain via Hunter.io
+            'domain': None,
             'website': website,
             'headcount': None,
             'countries_count': None,
@@ -151,9 +183,13 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
         }
 
         try:
-            insert_company(conn, company_data)
+            row_id = insert_company(conn, company_data)
             new_count += 1
-            logger.debug('Added %s', name)
+            domain = _clearbit_domain(name)
+            if domain:
+                update_company_domain(conn, row_id, domain)
+            logger.debug('Added %s%s', name, f' → {domain}' if domain else '')
+            time.sleep(0.2)
         except Exception as exc:
             logger.error('Insert failed for %s: %s', name, exc)
 

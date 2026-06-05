@@ -95,3 +95,8 @@ def insert_company(conn: sqlite3.Connection, data: dict) -> int:
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def update_company_domain(conn: sqlite3.Connection, company_id: int, domain: str) -> None:
+    conn.execute('UPDATE companies SET domain = ? WHERE id = ?', (domain, company_id))
+    conn.commit()
