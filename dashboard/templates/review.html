@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Review — Job Agent{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="banner banner-error">DB error: {{ error }}</div>
+{% endif %}
+{% if msg %}
+  {% if 'error' in msg.lower() or 'failed' in msg.lower() or 'not set' in msg.lower() %}
+    <div class="banner banner-error">{{ msg }}</div>
+  {% else %}
+    <div class="banner banner-success">{{ msg }}</div>
+  {% endif %}
+{% endif %}
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+  <div style="font-size:18px;font-weight:600">
+    Draft emails
+    {% if drafts %}
+      <span class="col-count" style="margin-left:8px;font-size:14px">{{ drafts|length }}</span>
+    {% endif %}
+  </div>
+  <form method="post" action="/run-mailer">
+    <button type="submit" class="btn" style="margin-top:0">Run Mailer</button>
+  </form>
+</div>
+
+{% if not drafts %}
+  <div style="color:var(--muted);padding:40px 0;text-align:center;font-size:13px">
+    No draft emails. Run the mailer to generate some, or wait for the next pipeline cycle.
+  </div>
+{% else %}
+  <div class="review-list">
+    {% for e in drafts %}
+    <div class="review-card">
+
+      <!-- header -->
+      <div class="review-card-header">
+        <div class="review-company">
+          <span class="review-company-name">{{ e.company_name }}</span>
+          {% if e.company_domain %}
+            <a class="domain-link" href="https://{{ e.company_domain }}" target="_blank" rel="noopener" style="font-size:12px;margin-left:8px">{{ e.company_domain }}</a>
+          {% endif %}
+          <span class="badge bg" style="margin-left:8px">score {{ e.remote_score | int }}</span>
+        </div>
+        <div class="review-date">{{ e.created_at[:10] if e.created_at else '' }}</div>
+      </div>
+
+      <!-- contact info -->
+      <div class="review-meta">
+        <span style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">To</span>
+        {% if e.contact_name %}
+          <span style="margin-left:6px;font-weight:500">{{ e.contact_name }}</span>
+        {% endif %}
+        {% if e.contact_role %}
+          <span class="badge bm" style="margin-left:4px">{{ e.contact_role }}</span>
+        {% endif %}
+        {% if e.contact_email %}
+          <span style="margin-left:6px;color:var(--accent);font-size:12px">{{ e.contact_email }}</span>
+        {% endif %}
+      </div>
+
+      <!-- subject -->
+      <div class="review-subject">
+        <span style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Subject</span>
+        <span style="margin-left:8px;font-weight:600">{{ e.subject }}</span>
+      </div>
+
+      <!-- body -->
+      <div class="email-body">{{ e.body }}</div>
+
+      <!-- actions -->
+      <div class="review-actions">
+        <form method="post" action="/approve/{{ e.id }}" style="margin:0">
+          <button type="submit" class="btn-action btn-approve">Approve &amp; Send</button>
+        </form>
+        <form method="post" action="/skip/{{ e.id }}" style="margin:0">
+          <button type="submit" class="btn-action btn-skip">Skip</button>
+        </form>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

@@ -162,3 +162,38 @@ def insert_contact(
         (company_id, name, role, email, 1 if verified else 0),
     )
     conn.commit()
+
+
+def get_companies_for_draft(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute("""
+        SELECT
+            c.*,
+            ct.id    AS contact_id,
+            ct.name  AS contact_name,
+            ct.role  AS contact_role,
+            ct.email AS contact_email
+        FROM companies c
+        JOIN contacts ct ON ct.company_id = c.id
+        WHERE c.qualified = 1
+          AND NOT EXISTS (SELECT 1 FROM emails WHERE emails.company_id = c.id)
+        ORDER BY c.remote_score DESC
+    """).fetchall()
+    return [dict(row) for row in rows]
+
+
+def insert_email_draft(
+    conn: sqlite3.Connection,
+    company_id: int,
+    contact_id: int,
+    subject: str,
+    body: str,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO emails (company_id, contact_id, subject, body, status)
+        VALUES (?, ?, ?, ?, 'draft')
+        """,
+        (company_id, contact_id, subject, body),
+    )
+    conn.commit()
+    return cursor.lastrowid

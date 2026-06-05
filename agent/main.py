@@ -5,6 +5,7 @@ import time
 from config import load_config
 from db import get_conn, init_db
 from finder import run as find_contacts
+from mailer import run as draft_emails
 from qualifier import run as qualify
 from scraper import run_all
 
@@ -16,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SLEEP_SECONDS = 86400  # replaced by APScheduler in Session 6
+SLEEP_SECONDS = 86400  # replaced by APScheduler in Session 7
 
 
 def run_pipeline() -> None:
@@ -34,6 +35,9 @@ def run_pipeline() -> None:
 
         finder_results = find_contacts(conn, cfg)
         logger.info('Finder complete — %s', finder_results)
+
+        mailer_results = draft_emails(conn, cfg)
+        logger.info('Mailer complete — %s', mailer_results)
     finally:
         conn.close()
 

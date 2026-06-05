@@ -1,16 +1,26 @@
+import base64
+import email.mime.text as _mime
+import json
+import logging
 import os
+import re
 import sqlite3
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 import yaml
 from flask import Flask, redirect, render_template, request, url_for
 
-DB_PATH = Path('/data/jobs.db')
+logger = logging.getLogger(__name__)
+
+DB_PATH     = Path('/data/jobs.db')
 CONFIG_PATH = Path('/data/config.yml')
 
-HUNTER_API = 'https://api.hunter.io/v2/domain-search'
+HUNTER_API    = 'https://api.hunter.io/v2/domain-search'
+MAILER_MODEL  = 'claude-sonnet-4-6'
+GMAIL_SENDER  = 'mb.bouziyani@gmail.com'
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev')
@@ -22,7 +32,7 @@ def _db():
     return conn
 
 
-# ── Hunter.io helpers (self-contained — agent/finder.py is in a separate container) ──
+# ── Hunter.io helpers ─────────────────────────────────────────────────────────
 
 _ROLE_TIERS = [
     ['cto', 'chief technology officer', 'chief technical officer'],
@@ -73,6 +83,127 @@ def _hunter_search(domain: str, api_key: str) -> list:
     return []
 
 
+# ── Mailer helpers (self-contained — agent container not reachable) ───────────
+
+_MAILER_PROFILE = """\
+Name:     Mohammed Bouziyani
+Stack:    Java, Spring Boot, React/TypeScript, Node.js, Docker, PostgreSQL, REST APIs, JWT, JUnit
+Location: Morocco — open to remote worldwide
+
+Experience:
+  Networia (Feb–May 2025):              task management app, Spring Boot + React, JWT, Docker, SonarQube
+  Vision Business Consulting (Mar–Sep 2024): web + mobile apps for BASF + Fondation Mohammed VI, 20% perf gain
+  Networia (Jun–Aug 2023):              medical practice management system
+  FSSM Marrakech (May–Jul 2022):        HR application, React + PHP
+
+Project: e-commerce platform — Spring Boot + React + PostgreSQL + Docker
+Education: Computer Science & Information Systems Engineering, Université Privée de Marrakech (2024)
+Languages: Arabic (native), French (C1), English (B2)"""
+
+
+def _build_mailer_prompt(company: dict) -> str:
+    contact_name = company.get('contact_name') or 'the hiring team'
+    contact_role = company.get('contact_role') or ''
+    to_line = f'{contact_name} ({contact_role})' if contact_role else contact_name
+
+    return f"""Write a cold outreach email from Mohammed Bouziyani to {to_line} at {company['name']}.
+
+Company info:
+  Domain:       {company.get('domain') or 'unknown'}
+  Description:  {(company.get('description') or 'not available')[:400]}
+  Stack/Tags:   {company.get('stack') or 'unknown'}
+  Remote score: {company.get('remote_score', 0)}/10
+
+Mohammed's profile:
+{_MAILER_PROFILE}
+
+Email structure — follow EXACTLY:
+  Line 1 — Hook: one specific thing about {company['name']} (product, funding, open-source, blog, stack). Be concrete.
+  Line 2 — Relevance: how Mohammed's Java/Spring Boot + React background maps to their stack or need.
+  Line 3 — Proof: ONE concrete result from Mohammed's experience (pick the most relevant).
+  Line 4 — Ask: "Would a 15-min call make sense?"
+  Sign-off: Mohammed Bouziyani | mb.bouziyani@gmail.com | linkedin.com/in/mohammed-bouziyani
+
+Hard rules:
+  - Body (excluding sign-off) ≤ 150 words
+  - No filler phrases: "I am passionate about", "I hope this finds you well", "excited to"
+  - Subject must reference {company['name']} specifically
+  - Address {contact_name} by first name if it's a real person's name
+
+Return exactly this JSON (no other text):
+{{"subject": "...", "body": "..."}}"""
+
+
+def _run_mailer_for(conn, targets, max_drafts: int) -> tuple[int, int]:
+    import anthropic
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        raise RuntimeError('ANTHROPIC_API_KEY not set')
+
+    client  = anthropic.Anthropic(api_key=api_key)
+    drafted = skipped = 0
+
+    for company in targets:
+        if drafted >= max_drafts:
+            break
+        try:
+            msg = client.messages.create(
+                model=MAILER_MODEL,
+                max_tokens=512,
+                system='You are writing a cold outreach email. Respond with valid JSON only — no markdown, no explanation.',
+                messages=[{'role': 'user', 'content': _build_mailer_prompt(dict(company))}],
+            )
+            text = msg.content[0].text.strip()
+            text = re.sub(r'^```(?:json)?\s*', '', text)
+            text = re.sub(r'\s*```$', '', text)
+            result = json.loads(text.strip())
+        except Exception as exc:
+            logger.warning('Draft generation failed for %s: %s', company['name'], exc)
+            skipped += 1
+            continue
+
+        if not result.get('subject') or not result.get('body'):
+            skipped += 1
+            continue
+
+        conn.execute(
+            "INSERT INTO emails (company_id, contact_id, subject, body, status) VALUES (?, ?, ?, ?, 'draft')",
+            (company['id'], company['contact_id'], result['subject'], result['body']),
+        )
+        conn.commit()
+        drafted += 1
+        time.sleep(1)
+
+    return drafted, skipped
+
+
+# ── Gmail helpers ─────────────────────────────────────────────────────────────
+
+def _gmail_service():
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+
+    creds = Credentials(
+        token=None,
+        refresh_token=os.environ.get('GMAIL_REFRESH_TOKEN'),
+        client_id=os.environ.get('GMAIL_CLIENT_ID'),
+        client_secret=os.environ.get('GMAIL_CLIENT_SECRET'),
+        token_uri='https://oauth2.googleapis.com/token',
+        scopes=['https://www.googleapis.com/auth/gmail.send'],
+    )
+    return build('gmail', 'v1', credentials=creds, cache_discovery=False)
+
+
+def _send_via_gmail(to_address: str, subject: str, body: str) -> None:
+    service = _gmail_service()
+    msg = _mime.MIMEText(body, 'plain', 'utf-8')
+    msg['To']      = to_address
+    msg['From']    = GMAIL_SENDER
+    msg['Subject'] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().messages().send(userId='me', body={'raw': raw}).execute()
+
+
 # ── pipeline ──────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -92,7 +223,7 @@ def pipeline():
         qualified = conn.execute("""
             SELECT * FROM companies
             WHERE qualified = 1
-              AND id NOT IN (SELECT DISTINCT company_id FROM contacts)
+              AND NOT EXISTS (SELECT 1 FROM contacts WHERE contacts.company_id = companies.id)
             ORDER BY remote_score DESC
         """).fetchall()
 
@@ -101,9 +232,10 @@ def pipeline():
             FROM companies c
             JOIN contacts ct ON ct.company_id = c.id
             WHERE c.qualified = 1
-              AND c.id NOT IN (
-                  SELECT DISTINCT company_id FROM emails
-                  WHERE status IN ('sent','replied')
+              AND NOT EXISTS (
+                  SELECT 1 FROM emails
+                  WHERE emails.company_id = c.id
+                    AND emails.status IN ('sent','replied')
               )
             GROUP BY c.id
             ORDER BY c.remote_score DESC
@@ -136,6 +268,115 @@ def pipeline():
                            all_scraped=all_scraped,
                            msg=msg,
                            error=None)
+
+
+# ── review ────────────────────────────────────────────────────────────────────
+
+@app.route('/review')
+def review():
+    msg = request.args.get('msg')
+    try:
+        conn = _db()
+        drafts = conn.execute("""
+            SELECT
+                e.*,
+                c.name        AS company_name,
+                c.domain      AS company_domain,
+                c.remote_score,
+                c.description AS company_description,
+                ct.name       AS contact_name,
+                ct.role       AS contact_role,
+                ct.email      AS contact_email
+            FROM emails e
+            JOIN companies c  ON c.id  = e.company_id
+            LEFT JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.status = 'draft'
+            ORDER BY e.created_at DESC
+        """).fetchall()
+        conn.close()
+    except Exception as exc:
+        return render_template('review.html', error=str(exc), drafts=[], msg=None)
+
+    return render_template('review.html', drafts=drafts, msg=msg, error=None)
+
+
+@app.route('/approve/<int:email_id>', methods=['POST'])
+def approve(email_id):
+    try:
+        conn = _db()
+        row = conn.execute("""
+            SELECT e.*, ct.email AS to_email
+            FROM emails e
+            JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.id = ?
+        """, (email_id,)).fetchone()
+
+        if not row:
+            conn.close()
+            return redirect(url_for('review', msg='Email not found'))
+
+        _send_via_gmail(row['to_email'], row['subject'], row['body'])
+
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute(
+            "UPDATE emails SET status = 'sent', sent_at = ? WHERE id = ?",
+            (now, email_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        return redirect(url_for('review', msg=f'Send failed: {exc}'))
+
+    return redirect(url_for('review', msg='Email sent successfully'))
+
+
+@app.route('/skip/<int:email_id>', methods=['POST'])
+def skip(email_id):
+    try:
+        conn = _db()
+        conn.execute("UPDATE emails SET status = 'skipped' WHERE id = ?", (email_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return redirect(url_for('review'))
+
+
+# ── mailer trigger ────────────────────────────────────────────────────────────
+
+@app.route('/run-mailer', methods=['POST'])
+def run_mailer():
+    try:
+        conn = _db()
+
+        try:
+            cfg_text = CONFIG_PATH.read_text(encoding='utf-8')
+            cfg = yaml.safe_load(cfg_text) or {}
+        except Exception:
+            cfg = {}
+        max_drafts = cfg.get('outreach', {}).get('max_drafts_per_day', 3)
+
+        targets = conn.execute("""
+            SELECT
+                c.*,
+                ct.id    AS contact_id,
+                ct.name  AS contact_name,
+                ct.role  AS contact_role,
+                ct.email AS contact_email
+            FROM companies c
+            JOIN contacts ct ON ct.company_id = c.id
+            WHERE c.qualified = 1
+              AND NOT EXISTS (SELECT 1 FROM emails WHERE emails.company_id = c.id)
+            ORDER BY c.remote_score DESC
+        """).fetchall()
+
+        drafted, skipped = _run_mailer_for(conn, targets, max_drafts)
+        conn.close()
+    except Exception as exc:
+        return redirect(url_for('review', msg=f'Mailer error: {exc}'))
+
+    return redirect(url_for('review',
+                            msg=f'Mailer done — {drafted} drafts created ({skipped} skipped)'))
 
 
 # ── finder trigger ─────────────────────────────────────────────────────────────
@@ -179,10 +420,7 @@ def run_finder():
             verified = (contact.get('confidence') or 0) > 70
 
             conn.execute(
-                """
-                INSERT INTO contacts (company_id, name, role, email, source, verified)
-                VALUES (?, ?, ?, ?, 'hunter', ?)
-                """,
+                "INSERT INTO contacts (company_id, name, role, email, source, verified) VALUES (?, ?, ?, ?, 'hunter', ?)",
                 (company['id'], name, role, email, 1 if verified else 0),
             )
             conn.commit()

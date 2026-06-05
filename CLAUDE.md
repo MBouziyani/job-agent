@@ -211,7 +211,61 @@ Within same tier: personal-type email > generic; then confidence descending.
   the loop so the fetch count is visible even when Hunter.io calls are skipped.
 
 ### Not yet built (do NOT re-implement)
-- mailer.py, review.html, followup.py — Session 6+
+- followup.py — Session 7
+- APScheduler wiring — Session 7
+
+---
+
+## Session 6 status (completed 2026-06-05)
+
+### What was built
+- `agent/mailer.py` — Claude sonnet-4-6 draft generation; reads `max_drafts_per_day` from config
+- `agent/db.py` — added `get_companies_for_draft(conn)` and `insert_email_draft(conn, ...)` helpers
+- `agent/main.py` — pipeline is now scrape → qualify → find contacts → draft emails
+- `dashboard/app.py` — added `/review`, `/approve/<id>`, `/skip/<id>`, `/run-mailer`; added
+  `_build_mailer_prompt()`, `_run_mailer_for()`, `_gmail_service()`, `_send_via_gmail()` helpers;
+  also switched pipeline.html's `NOT IN` subqueries to `NOT EXISTS` (same NULL-safety fix as db.py)
+- `dashboard/templates/review.html` — NEW: draft email cards with contact info, subject, body,
+  Approve & Send / Skip buttons; "Run Mailer" button at top
+- `dashboard/templates/base.html` — "Review" nav link added; review card CSS + email-body
+  preformatted block + `.btn-approve` (green) + `.btn-skip` (red) styles
+- `dashboard/requirements.txt` — added `anthropic>=0.32`, `google-auth>=2.0`,
+  `google-api-python-client>=2.0`
+
+### What works
+- `mailer.run(conn, cfg)`: queries companies with contact but no email (`NOT EXISTS` on emails);
+  calls `claude-sonnet-4-6` with a structured prompt; parses JSON `{subject, body}`; inserts
+  rows into `emails` with `status='draft'`; stops at `max_drafts_per_day` cap; 1 s between calls
+- Draft prompt structure: Hook → Relevance → Proof → Ask → Sign-off; ≤ 150 words body;
+  Mohammed's full profile hardcoded in prompt; subject references the company specifically
+- `/review` shows all `status='draft'` emails joined with company + contact
+- `/approve/<id>`: fetches draft, calls `_send_via_gmail()`, updates `status='sent'` + `sent_at`
+- `/skip/<id>`: updates `status='skipped'`, redirects back to /review
+- `/run-mailer`: self-contained inline version of the draft logic (identical prompt);
+  reads `max_drafts_per_day` from `/data/config.yml`; redirects to /review with result banner
+- Gmail sending: `google.oauth2.credentials.Credentials(token=None, refresh_token=..., ...)` +
+  `build('gmail', 'v1', ...)` + `MIMEText(body, 'plain', 'utf-8')` → base64 → `messages.send()`
+  `cache_discovery=False` prevents discovery-doc caching issues in Docker
+
+### DB helpers added in Session 6
+- `get_companies_for_draft(conn)` — `qualified=1 AND has contact AND NOT EXISTS in emails`
+- `insert_email_draft(conn, company_id, contact_id, subject, body)` — `status='draft'`, returns id
+
+### Design decisions
+- `_gmail_service()` and `_send_via_gmail()` live in `dashboard/app.py` only (not agent) — sending
+  is a human-triggered action, not part of the automated pipeline
+- `_build_mailer_prompt()` duplicated in `agent/mailer.py` and `dashboard/app.py` — two-container
+  architecture makes sharing code impossible; kept in sync manually
+- Gmail credentials imported lazily inside the helper functions so the dashboard still starts if
+  `google-auth` fails to import (e.g. during local dev without the package installed)
+- `cache_discovery=False` passed to `build()` — prevents `googleapiclient` from writing a
+  discovery cache file to a potentially read-only filesystem inside Docker
+- `msg` query-param pattern for flash messages (consistent with existing pipeline/finder)
+- Approve button sends immediately with no confirmation — intentional; user already reviewed body
+
+### Not yet built (do NOT re-implement)
+- followup.py — Session 7
+- APScheduler — Session 7
 
 ---
 
@@ -257,8 +311,8 @@ job-agent/
 │   ├── scraper.py        # RemoteOK + We Work Remotely + Clearbit domain lookup
 │   ├── qualifier.py      # Claude haiku scoring, writes remote_score + qualified
 │   ├── finder.py         # Hunter.io domain search → contacts table
-│   ├── mailer.py         # NOT YET BUILT — Session 6
-│   ├── followup.py       # NOT YET BUILT — Session 6
+│   ├── mailer.py         # Claude sonnet draft generation → emails table (status='draft')
+│   ├── followup.py       # NOT YET BUILT — Session 7
 │   └── config.py         # loads /data/config.yml
 ├── dashboard/
 │   ├── Dockerfile
@@ -268,7 +322,7 @@ job-agent/
 │       ├── base.html     # dark CSS, nav (4+5-col kanban, filter tabs, btn-sm, red badge)
 │       ├── pipeline.html # 5-column kanban (All Scraped + Discovered + Qualified + Email Found + Contacted)
 │       ├── companies.html # full company browser with filters + force-qualify button
-│       ├── review.html   # NOT YET BUILT — Session 5
+│       ├── review.html   # draft email cards — Approve & Send / Skip buttons
 │       ├── settings.html # YAML editor, validates before save
 │       └── stats.html    # 10-card headline grid + top qualified table + by-source table
 └── data/
@@ -348,13 +402,26 @@ GMAIL_REFRESH_TOKEN → mailer.py sending
 FLASK_SECRET_KEY    → dashboard sessions
 ```
 
-## Pipeline flow (Sessions 1–5 implemented)
+## Gmail OAuth setup (one-time, run locally)
+```
+1. Go to Google Cloud Console → APIs & Services → Credentials
+2. Create OAuth 2.0 Client ID (Desktop app) → download as credentials.json → place in project root
+3. pip install google-auth-oauthlib
+4. python get_token.py          ← opens browser, authorises, prints all three values
+5. Copy GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN into .env
+6. credentials.json is in .gitignore — never commit it
+```
+- `get_token.py` uses `InstalledAppFlow.from_client_secrets_file` + `run_local_server(port=0)`
+- Scope: `https://www.googleapis.com/auth/gmail.send` (send-only, no read access)
+- `credentials.json` and `get_token.py` are project-root only; neither goes into a container
+
+## Pipeline flow (Sessions 1–6 implemented)
 ```
 1. scraper.py   → fetch new companies, dedup, Clearbit domain, insert to DB  ✓
 2. qualifier.py → score unqualified companies via Claude haiku, update DB     ✓
 3. finder.py    → Hunter.io lookup for qualified companies with a domain      ✓
-4. mailer.py    → generate drafts via Claude sonnet, status='draft'           (Session 6)
-5. followup.py  → check emails sent 7 days ago, queue follow-ups              (Session 6)
+4. mailer.py    → generate drafts via Claude sonnet, status='draft'           ✓
+5. followup.py  → check emails sent 7 days ago, queue follow-ups              (Session 7)
 ```
 
 ## Email structure Claude must follow
@@ -402,7 +469,8 @@ Session 2: qualifier.py + Claude API + config.py                               �
 Session 3: Flask dashboard (pipeline / stats / settings)                       ✓ done
 Session 4: dashboard enhancements — All Scraped column, /companies, force-qualify ✓ done
 Session 5: finder.py + Hunter.io integration                                  ✓ done
-Session 6: mailer.py + review.html + Gmail OAuth
+Session 6: mailer.py + review.html + Gmail send + /approve /skip /run-mailer  ✓ done
+Session 7: followup.py + APScheduler wiring
 Session 6: followup.py + APScheduler wiring
 Session 7: Hermes Agent container + Telegram bot
 ```
