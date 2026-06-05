@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — Job Agent{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="banner banner-error">DB error: {{ error }}</div>
+{% endif %}
+
+<div class="kanban">
+
+  <!-- ── Discovered ── -->
+  <div class="col">
+    <div class="col-head c-discovered">
+      Discovered
+      <span class="col-count">{{ discovered|length }}</span>
+    </div>
+    <div class="cards">
+      {% for c in discovered %}
+      <div class="card">
+        <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="card-meta">
+          {% if c.domain %}
+            <span class="badge bd">{{ c.domain }}</span>
+          {% endif %}
+          <span class="badge bm">{{ c.source }}</span>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-empty">No companies yet</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Qualified ── -->
+  <div class="col">
+    <div class="col-head c-qualified">
+      Qualified
+      <span class="col-count">{{ qualified|length }}</span>
+    </div>
+    <div class="cards">
+      {% for c in qualified %}
+      <div class="card">
+        <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="card-meta">
+          {% if c.domain %}
+            <span class="badge bd">{{ c.domain }}</span>
+          {% endif %}
+          <span class="badge bg">score {{ c.remote_score | int }}</span>
+          <span class="badge bm">{{ c.source }}</span>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-empty">None yet</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Email Found ── -->
+  <div class="col">
+    <div class="col-head c-email">
+      Email Found
+      <span class="col-count">{{ email_found|length }}</span>
+    </div>
+    <div class="cards">
+      {% for c in email_found %}
+      <div class="card">
+        <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="card-meta">
+          <span class="badge by">{{ c.email }}</span>
+          {% if c.contact_name %}
+            <span class="badge bm">{{ c.contact_name }}</span>
+          {% endif %}
+          <span class="badge bg">score {{ c.remote_score | int }}</span>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-empty">Session 4 builds this</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Contacted ── -->
+  <div class="col">
+    <div class="col-head c-contacted">
+      Contacted
+      <span class="col-count">{{ contacted|length }}</span>
+    </div>
+    <div class="cards">
+      {% for c in contacted %}
+      <div class="card">
+        <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="card-meta">
+          {% if c.status == 'replied' %}
+            <span class="badge bg">replied</span>
+          {% else %}
+            <span class="badge bo">sent</span>
+          {% endif %}
+          {% if c.sent_at %}
+            <span class="badge bm">{{ c.sent_at[:10] }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="card-empty">Session 5 builds this</div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

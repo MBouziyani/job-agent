@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Settings — Job Agent{% endblock %}
+
+{% block content %}
+<div class="settings-wrap">
+  <h1>Settings</h1>
+
+  {% if message %}
+    <div class="banner banner-success">{{ message }}</div>
+  {% endif %}
+  {% if error %}
+    <div class="banner banner-error">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <textarea name="config" rows="36" spellcheck="false">{{ config_text }}</textarea>
+    <br>
+    <button type="submit" class="btn">Save config.yml</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Stats — Job Agent{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="banner banner-error">DB error: {{ error }}</div>
+{% endif %}
+
+<!-- ── headline numbers ── -->
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total scraped</div>
+    <div class="stat-value accent">{{ totals.total }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Qualified</div>
+    <div class="stat-value green">{{ totals.qualified }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Rejected</div>
+    <div class="stat-value" style="color:var(--muted)">{{ totals.rejected }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Pending score</div>
+    <div class="stat-value yellow">{{ totals.pending }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Domain found</div>
+    <div class="stat-value accent">{{ totals.with_domain }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Contacts found</div>
+    <div class="stat-value yellow">{{ totals.contacts }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Emails sent</div>
+    <div class="stat-value orange">{{ totals.sent }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Replies</div>
+    <div class="stat-value green">{{ totals.replied }}</div>
+  </div>
+</div>
+
+<!-- ── top qualified ── -->
+<div class="section-title">Top qualified companies</div>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Company</th>
+        <th>Domain</th>
+        <th>Score</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in top %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>
+          {% if c.domain %}
+            <a class="domain-link" href="https://{{ c.domain }}" target="_blank" rel="noopener">
+              {{ c.domain }}
+            </a>
+          {% else %}
+            <span style="color:var(--muted)">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="badge bg">{{ c.remote_score | int }}</span>
+        </td>
+        <td><span class="badge bm">{{ c.source }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No qualified companies yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ── by source ── -->
+<div class="section-title">Companies by source</div>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th>Count</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in by_source %}
+      <tr>
+        <td><span class="badge bm">{{ row.source }}</span></td>
+        <td>{{ row.n }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2" style="color:var(--muted);text-align:center;padding:20px">No data yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

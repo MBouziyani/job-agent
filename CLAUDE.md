@@ -7,43 +7,38 @@
 - `agent/config.py` — loads `data/config.yml` via `load_config()`
 - `agent/scraper.py` — RemoteOK (JSON API) + We Work Remotely (RSS) scrapers with deduplication
 - `agent/main.py` — entry point: infinite loop, runs pipeline then `time.sleep(86400)`
-- `docker-compose.yml` — agent + dashboard containers skeleton, `/data` shared volume
+- `docker-compose.yml` — agent + dashboard containers, `/data` shared volume
 
 ### What works
 - RemoteOK: hits JSON API, fixes encoding with `resp.encoding='utf-8'` + `_fix_encoding()` per name,
   skips legal notice (no `company` key), deduplicates by name, stores `domain=None` initially,
   then immediately calls Clearbit Autocomplete to discover real domain and updates the row
-- We Work Remotely: fetches RSS, parses with BeautifulSoup xml parser, extracts company from
-  title ("... at Company Name"), same Clearbit lookup after insert — no auth, no JS, no blocking
+- We Work Remotely: fetches RSS at `https://weworkremotely.com/remote-jobs.rss`, parses with
+  BeautifulSoup xml parser, extracts company from title ("… at Company Name"), same Clearbit lookup
 - Clearbit Autocomplete: `https://autocomplete.clearbit.com/v1/companies/suggest?query=NAME`
-  free, no key, returns `[{domain, name, logo}, ...]` — take `results[0].domain` if present
+  free, no key, returns `[{domain, name, logo}, …]` — take `results[0].domain` if present
 - Deduplication: `company_exists(conn, name, source)` checks `UNIQUE(name, source)` in DB
-- `main.py` loops forever — run pipeline, sleep 24h, repeat (APScheduler replaces this in Session 6)
+- `main.py` loops forever — run pipeline, sleep 24 h, repeat (APScheduler replaces in Session 6)
 
 ### DB schema decisions
-- `companies.domain` is nullable — populated by Clearbit at scrape time when found; NULL remainder
-  handled by `finder.py` in Session 4 via Hunter.io company search.
-- Unique constraint is `UNIQUE(name, source)` — not on `domain`.
-- **If schema changed on an existing DB**: delete `/data/jobs.db` and restart to recreate.
+- `companies.domain` nullable — Clearbit fills it at scrape time; NULLs handled by finder.py (Session 4)
+- Unique constraint is `UNIQUE(name, source)` — not on `domain`
+- **Schema changed on existing DB**: delete `/data/jobs.db` and restart
 
 ### Confirmed RemoteOK API fields (verified via curl)
-`slug, id, epoch, date, company, company_logo, position, tags, description, location, apply_url, salary_min, salary_max, logo, url`
-Note: `url` is the remoteok.com job page URL — DO NOT use for domain/dedup. Use `company` name.
+`slug, id, epoch, date, company, company_logo, position, tags, description, location,`
+`apply_url, salary_min, salary_max, logo, url`
+Note: `url` is a remoteok.com job page URL — DO NOT use for domain/dedup. Use `company` name.
 
 ### Bugs fixed this session
-- `scraper.py` referenced undefined `_HEADERS` — silently returned 0. Fixed.
+- `scraper.py` used undefined `_HEADERS` — silently returned 0. Fixed.
 - `main.py` exited after one run. Fixed: `while True` + `time.sleep(86400)`.
-- RemoteOK: `url` field points to remoteok.com → dedup collapsed all records to 1. Fixed.
-- RemoteOK: UTF-8 mojibake on company names — fixed with `resp.encoding='utf-8'` AND
-  `_fix_encoding(s)` helper: `s.encode('latin-1').decode('utf-8')` catches strings already mangled.
-- RemoteOK: fake `{slug}.remoteok` domains — removed; Clearbit fills real domain post-insert.
-- Himalayas returned 403 consistently — replaced entirely with We Work Remotely RSS scraper.
-- `docker-compose.yml` had obsolete `version: '3.8'` top-level key — removed.
-
-### Not yet built (do NOT re-implement)
-- finder.py, mailer.py, followup.py — Session 4+
-- Flask dashboard — Session 3
-- Wellfound scraper — deferred (requires Playwright)
+- RemoteOK `url` field → remoteok.com, dedup collapsed all records to 1. Fixed: use company name.
+- RemoteOK UTF-8 mojibake — fixed with `resp.encoding='utf-8'` + `_fix_encoding()` per name.
+- Himalayas returned 403 — replaced entirely with We Work Remotely RSS scraper.
+- `docker-compose.yml` had obsolete `version: '3.8'` key — removed.
+- `extract_domain()` was dead code after Clearbit replaced URL-based domain extraction — removed.
+- `config.yml` had stale `himalayas: true` key and `we_work_remotely: false` — fixed.
 
 ---
 
@@ -55,23 +50,55 @@ Note: `url` is the remoteok.com job page URL — DO NOT use for domain/dedup. Us
 - `agent/main.py` — pipeline now runs scraper → qualifier in sequence
 
 ### What works
-- `qualifier.run(conn, cfg)` fetches all companies where `qualified IS NULL`, scores each with
-  `claude-haiku-4-5-20251001`, parses JSON response, writes `remote_score` + `qualified` back to DB
-- Scoring follows CLAUDE.md rules: headcount, remote signals, stack overlap, exclude keywords
-- `min_score` read from `config.yml qualification.min_score` (default 7)
-- ANTHROPIC_API_KEY checked at runtime — logs clear error and returns early if missing
+- `qualifier.run(conn, cfg)` fetches all `qualified IS NULL` companies, scores each with
+  `claude-haiku-4-5-20251001`, parses JSON, writes `remote_score` + `qualified` back to DB
+- Score prompt includes company name, domain, description, stack, headcount; framing tells
+  Claude to be generous — score 5+ = worth investigating, 0-2 only for obviously non-remote
+- `_unwrap_json()` strips markdown fences Claude sometimes wraps responses in
+- `min_score` from `config.yml qualification.min_score` (currently **4** for tuning; raise to 7 later)
+- ANTHROPIC_API_KEY checked at runtime — logs error and returns early if missing
 - 0.5 s sleep between Claude calls to stay within haiku rate limits
 - Migration: `ALTER TABLE companies ADD COLUMN qualified INTEGER DEFAULT NULL` runs on startup,
-  silently skipped if column already exists — safe for existing `/data/jobs.db`
+  silently skipped if column already exists
 
 ### DB changes in Session 2
-- `companies.qualified` — NULL = not yet scored, 1 = qualified (score ≥ min_score), 0 = rejected
-- `companies.remote_score` — now written by qualifier (was always 0 from scraper)
+- `companies.qualified` — NULL = not scored, 1 = qualified (score ≥ min_score), 0 = rejected
+- `companies.remote_score` — written by qualifier (scraper always inserts 0)
 - New helpers: `get_unqualified_companies(conn)`, `update_company_qualification(conn, id, score, qualified)`
+
+### Qualifier prompt JSON response format
+```json
+{"score": 7, "remote_friendly": true, "stack_match": 0.8, "reasoning": "one sentence", "disqualify": false}
+```
+
+---
+
+## Session 3 status (completed 2026-06-05)
+
+### What was built
+- `dashboard/app.py` — Flask app: /, /pipeline, /stats, /settings, /health
+- `dashboard/templates/base.html` — dark minimal CSS (no external deps), nav with active states
+- `dashboard/templates/pipeline.html` — 4-column kanban
+- `dashboard/templates/settings.html` — YAML textarea, validates before saving
+- `dashboard/templates/stats.html` — 8-number headline grid + top qualified table + by-source table
+
+### Kanban stage definitions
+| Column | SQL condition |
+|--------|---------------|
+| Discovered | `qualified IS NULL` |
+| Qualified | `qualified = 1` AND no row in `contacts` |
+| Email Found | `qualified = 1` AND has contact AND no sent email |
+| Contacted | has email with `status IN ('sent','replied')` |
+
+### Design decisions
+- Pure CSS in base.html, zero external libraries — works offline, no CDN dependency
+- DB opened per-request (`sqlite3.connect`) — single-user dashboard, no pool needed
+- Settings saves only after `yaml.safe_load` validates — bad YAML shows inline error
+- All DB errors caught and shown as inline banners, dashboard never hard-crashes
 
 ### Not yet built (do NOT re-implement)
 - finder.py, mailer.py, followup.py — Session 4+
-- Flask dashboard — Session 3
+- review.html (email approve/reject UI) — Session 5
 
 ---
 
@@ -84,7 +111,7 @@ generate personalised cold emails, send, track, follow up.
 NOT applying to job postings — creating opportunities that don't exist yet.
 
 ## Infrastructure
-- VPS: DigitalOcean 4GB RAM / 90GB SSD / Ubuntu 24.04 / Frankfurt
+- VPS: DigitalOcean 4 GB RAM / 90 GB SSD / Ubuntu 24.04 / Frankfurt
 - Deployment: Docker Compose (two containers + shared volume)
 - Local dev: same Docker Compose runs identically on laptop
 - Phase 2: Hermes Agent added to same Compose (after core works)
@@ -92,14 +119,19 @@ NOT applying to job postings — creating opportunities that don't exist yet.
 ## Architecture
 
 ### Containers
+```
 agent       → Python scheduler + all pipeline modules
 dashboard   → Flask on port 5000 (review + approve emails)
+```
 
 ### Shared volume
+```
 /data/jobs.db    → SQLite, single source of truth
 /data/config.yml → pipeline settings, editable without redeployment
+```
 
-### File structure
+### File structure (current state)
+```
 job-agent/
 ├── docker-compose.yml
 ├── .env                  # never commit
@@ -108,76 +140,75 @@ job-agent/
 ├── agent/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── main.py           # entry point, APScheduler, runs pipeline daily 8am
-│   ├── scraper.py        # pulls companies from sources
-│   ├── qualifier.py      # scores companies via Claude API
-│   ├── finder.py         # finds contact emails via Hunter.io
-│   ├── mailer.py         # generates drafts via Claude API
-│   ├── followup.py       # queues day-7 follow-ups
-│   └── config.py         # loads config.yml, used by all modules
+│   ├── main.py           # entry point — scrape → qualify loop, sleep 24h
+│   ├── scraper.py        # RemoteOK + We Work Remotely + Clearbit domain lookup
+│   ├── qualifier.py      # Claude haiku scoring, writes remote_score + qualified
+│   ├── finder.py         # NOT YET BUILT — Session 4
+│   ├── mailer.py         # NOT YET BUILT — Session 5
+│   ├── followup.py       # NOT YET BUILT — Session 6
+│   └── config.py         # loads /data/config.yml
 ├── dashboard/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── app.py
+│   ├── app.py            # Flask: pipeline / stats / settings / health
 │   └── templates/
-│       ├── base.html
-│       ├── pipeline.html  # kanban overview
-│       ├── review.html    # approve/edit/reject drafts
-│       ├── settings.html  # edit config.yml from browser
-│       └── stats.html     # weekly numbers
+│       ├── base.html     # dark CSS, nav
+│       ├── pipeline.html # 4-column kanban
+│       ├── review.html   # NOT YET BUILT — Session 5
+│       ├── settings.html # YAML editor, validates before save
+│       └── stats.html    # headline numbers + tables
 └── data/
     ├── jobs.db
     └── config.yml
+```
 
-## Database schema
+## Database schema (current — Sessions 1 + 2)
 
 ### companies
-id, name, domain, website, headcount, countries_count,
-stack, description, source, remote_score, created_at
+```
+id, name, domain (nullable), website, headcount, countries_count,
+stack, description, source, remote_score, qualified (nullable int),
+created_at
+UNIQUE(name, source)
+```
+- `qualified`: NULL = not scored, 1 = passed, 0 = rejected
+- `domain`: NULL until Clearbit finds it; finder.py (Session 4) handles remaining NULLs
 
 ### contacts
+```
 id, company_id, name, role, email, source, verified (bool)
+```
 
 ### emails
+```
 id, company_id, contact_id, subject, body,
-status (draft/approved/sent/replied/skipped),
+status CHECK IN ('draft','approved','sent','replied','skipped'),
 sent_at, opened_at, created_at
+```
 
 ### followups
+```
 id, email_id, scheduled_at, sent_at, status
+```
 
-## Scoring logic (qualifier.py)
-Threshold to proceed: score >= 7 (configurable in config.yml)
+## Scraping sources (active)
+- **RemoteOK** — free JSON API at `remoteok.com/api`, no auth
+- **We Work Remotely** — RSS feed at `weworkremotely.com/remote-jobs.rss`, no auth
 
-+3  headcount between 10-80
--3  headcount > 200 (likely multinational, skip)
-+2  job desc contains "async", "work from anywhere", "no timezone"
-+2  uses Deel or Remote.com (detected on careers page)
-+2  employees in 5+ countries AND headcount < 100
--1  employees in 5+ countries AND headcount > 500
-+2  stack match score > 60% (Java/Spring Boot/React keywords)
-+1  funded in last 6 months (Crunchbase signal)
- 0  instant disqualify if "us only", "must be in", "on-site", "hybrid"
+Deduplication: `UNIQUE(name, source)` — checked before every insert.
+Domain discovery: Clearbit Autocomplete immediately after insert.
+Himalayas: dropped (persistent 403). Wellfound: deferred (requires Playwright).
 
-## Scraping sources
-- RemoteOK        → free JSON API at remoteok.com/api, no auth needed
-- Himalayas       → requests + BeautifulSoup
-- Wellfound       → Playwright (JS-heavy)
-- We Work Remotely → BeautifulSoup
-
-Deduplication: skip any company domain already in DB.
-No artificial cap on scraping — pull everything, filter hard.
-
-## config.yml structure
+## config.yml (current live values)
+```yaml
 scraping:
   sources:
     remoteok: true
-    himalayas: true
-    wellfound: true
+    wellfound: false
     we_work_remotely: true
 
 qualification:
-  min_score: 7
+  min_score: 4          # temporary — raise to 7 after tuning scorer
   min_countries: 3
   max_headcount: 150
   stack_keywords: [java, spring boot, react, typescript, docker, postgresql]
@@ -191,97 +222,81 @@ outreach:
 
 targets:
   regions: [worldwide, us, canada, europe]
+```
 
 ## API keys (all in .env, never hardcoded)
+```
 ANTHROPIC_API_KEY   → qualifier (claude-haiku-4-5-20251001) + mailer (claude-sonnet-4-6)
 HUNTER_API_KEY      → finder.py email lookup
 GMAIL_CLIENT_ID     → mailer.py sending
 GMAIL_CLIENT_SECRET → mailer.py sending
 GMAIL_REFRESH_TOKEN → mailer.py sending
 FLASK_SECRET_KEY    → dashboard sessions
+```
 
-## Claude API usage
-qualifier.py → claude-haiku-4-5-20251001 (fast + cheap, scores companies)
-mailer.py    → claude-sonnet-4-6 (best quality for email drafts)
-
-Qualifier prompt returns JSON:
-{
-  "score": 8,
-  "remote_friendly": true,
-  "stack_match": 0.75,
-  "reasoning": "...",
-  "disqualify": false
-}
-
-Email prompt returns plain text with subject line.
-Always in English unless config says French.
-
-## Pipeline flow (main.py, runs daily at 8am)
-1. scraper.py   → fetch new companies, dedup, insert to DB
-2. qualifier.py → score each new company, drop score < min_score
-3. finder.py    → Hunter.io lookup for qualified companies
-4. mailer.py    → generate drafts (status='draft'), max per config
-5. followup.py  → check emails sent 7 days ago, queue follow-ups
-
-Also: /run-pipeline endpoint on Flask triggers manually.
+## Pipeline flow (Sessions 1–3 implemented)
+```
+1. scraper.py   → fetch new companies, dedup, Clearbit domain, insert to DB  ✓
+2. qualifier.py → score unqualified companies via Claude haiku, update DB     ✓
+3. finder.py    → Hunter.io lookup for qualified companies with NULL domain   (Session 4)
+4. mailer.py    → generate drafts via Claude sonnet, status='draft'           (Session 5)
+5. followup.py  → check emails sent 7 days ago, queue follow-ups              (Session 6)
+```
 
 ## Email structure Claude must follow
+```
 Subject: specific, references company or role
 
-Line 1 - hook: something specific about them
-         (recent funding, product launch, stack, blog post)
-Line 2 - relevance: "I build with Java/Spring Boot + React,
-         matches your [specific thing]"
-Line 3 - proof: ONE concrete thing from Mohammed's background
-Line 4 - small ask: "Would a 15-min call make sense?"
+Line 1 — hook: something specific about them (funding, product, stack, blog)
+Line 2 — relevance: "I build with Java/Spring Boot + React, matches your [X]"
+Line 3 — proof: ONE concrete thing from Mohammed's background
+Line 4 — ask: "Would a 15-min call make sense?"
 
 Max 150 words. No fluff. No "I am passionate about technology".
-Sign off: Mohammed Bouziyani | mb.bouziyani@gmail.com |
-          linkedin.com/in/mohammed-bouziyani
+Sign-off: Mohammed Bouziyani | mb.bouziyani@gmail.com | linkedin.com/in/mohammed-bouziyani
+```
 
 ## Mohammed's profile (for email generation)
-Name: Mohammed Bouziyani
-Stack: Java, Spring Boot, React/TypeScript, Node.js,
-       Docker, PostgreSQL, REST APIs, JWT, JUnit
+```
+Name:   Mohammed Bouziyani
+Stack:  Java, Spring Boot, React/TypeScript, Node.js, Docker, PostgreSQL, REST APIs, JWT, JUnit
+Location: Morocco — open to remote worldwide
+
 Experience:
-  - Networia (Feb-May 2025): task management app,
-    Spring Boot + React, JWT, Docker, SonarQube
-  - Vision Business Consulting (Mar-Sep 2024): web + mobile
-    apps for BASF + Fondation Mohammed VI, 20% perf improvement
-  - Networia (Jun-Aug 2023): medical practice management system
-  - FSSM Marrakech (May-Jul 2022): HR application React + PHP
-Project: e-commerce platform, Spring Boot + React + PostgreSQL + Docker
-Education: Computer Science & Information Systems Engineering,
-           Université Privée de Marrakech (2024)
+  Networia (Feb–May 2025):             task management app, Spring Boot + React, JWT, Docker, SonarQube
+  Vision Business Consulting (Mar–Sep 2024): web + mobile apps for BASF + Fondation Mohammed VI, 20% perf gain
+  Networia (Jun–Aug 2023):             medical practice management system
+  FSSM Marrakech (May–Jul 2022):       HR application, React + PHP
+
+Project: e-commerce platform — Spring Boot + React + PostgreSQL + Docker
+Education: Computer Science & Information Systems Engineering, Université Privée de Marrakech (2024)
 Languages: Arabic (native), French (C1), English (B2)
-Location: Morocco, open to remote worldwide
+```
 
 ## Phase 2 — Hermes Agent (after core pipeline works)
-Added as third container in docker-compose.yml.
-Shares /data/jobs.db volume (read + write status column).
-Responsibilities:
-  - Telegram bot: notify Mohammed when drafts ready
-  - Mobile approval: "approve 1 2" → updates DB status
-  - Daily summary: scraped / qualified / sent / replies
-  - Weekly digest: Sunday 9am stats message
-Skill file: /hermes/skills/job_agent.py
-Uses same ANTHROPIC_API_KEY from .env.
-Does NOT replace Flask dashboard — Flask stays as backup UI.
+Third container in docker-compose.yml. Shares `/data/jobs.db`.
+- Telegram bot: notify when drafts ready; mobile approval ("approve 1 2" → updates DB status)
+- Daily summary: scraped / qualified / sent / replies
+- Weekly digest: Sunday 9 am
+- Skill file: `/hermes/skills/job_agent.py`
+- Uses same ANTHROPIC_API_KEY. Does NOT replace Flask dashboard.
 
-## Build order (one Claude Code session per phase)
-Session 1: SQLite schema + scraper.py + docker-compose.yml skeleton
-Session 2: qualifier.py + Claude API integration + config.py
-Session 3: Flask dashboard (pipeline.html + settings.html)
+## Build order
+```
+Session 1: scraper.py + db.py + docker-compose skeleton          ✓ done
+Session 2: qualifier.py + Claude API + config.py                 ✓ done
+Session 3: Flask dashboard (pipeline / stats / settings)         ✓ done
 Session 4: finder.py + Hunter.io integration
 Session 5: mailer.py + review.html + Gmail OAuth
-Session 6: followup.py + APScheduler wiring + main.py
-Session 7: Hermes Agent container + Telegram bot skill
+Session 6: followup.py + APScheduler wiring
+Session 7: Hermes Agent container + Telegram bot
+```
 
 ## Rules for every session
 - All secrets in .env, never hardcoded anywhere
 - SQLite only, no external DB server needed
 - config.yml is the single place to tune behaviour
-- Every module reads config via config.py load_config()
+- Every agent module reads config via `config.py load_config()`
 - Flask dashboard writes back to config.yml on settings save
 - Deduplication always checked before any insert
 - Claude API calls always wrapped in try/except
@@ -289,10 +304,12 @@ Session 7: Hermes Agent container + Telegram bot skill
 - Docker images must be linux/amd64 compatible (DigitalOcean Frankfurt)
 
 ## VPS details
-IP: 64.226.118.230
-OS: Ubuntu 24.04 LTS
-RAM: 4GB
-SSD: 90GB
-Region: Frankfurt (FRA1)
-User: root
-Project path: /opt/job-agent
+```
+IP:      64.226.118.230
+OS:      Ubuntu 24.04 LTS
+RAM:     4 GB
+SSD:     90 GB
+Region:  Frankfurt (FRA1)
+User:    root
+Path:    /opt/job-agent
+```

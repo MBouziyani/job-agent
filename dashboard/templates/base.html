@@ -4,8 +4,262 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Job Agent{% endblock %}</title>
+  <style>
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --surface2: #1c2128;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #7d8590;
+      --accent:   #58a6ff;
+      --green:    #3fb950;
+      --yellow:   #d29922;
+      --orange:   #f0883e;
+      --red:      #f85149;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── nav ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      height: 48px;
+      gap: 0;
+    }
+    .nav-brand {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+      margin-right: 32px;
+      letter-spacing: -0.2px;
+    }
+    .nav-brand span { color: var(--accent); }
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 14px 12px;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    nav a:hover { color: var(--text); }
+    nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+
+    /* ── page wrapper ── */
+    .page { padding: 24px; }
+
+    /* ── error banner ── */
+    .banner {
+      padding: 10px 16px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
+    .banner-error   { background: rgba(248,81,73,.12); border: 1px solid var(--red);    color: var(--red); }
+    .banner-success { background: rgba(63,185,80,.12); border: 1px solid var(--green);  color: var(--green); }
+
+    /* ── badges ── */
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .bd  { background: rgba(88,166,255,.15); color: var(--accent); }
+    .bg  { background: rgba(63,185,80,.15);  color: var(--green); }
+    .by  { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .bo  { background: rgba(240,136,62,.15); color: var(--orange); }
+    .bm  { background: rgba(125,133,144,.12); color: var(--muted); }
+
+    /* ── kanban ── */
+    .kanban {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .col {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .col-head {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+    }
+    .col-head.c-discovered { color: var(--accent); }
+    .col-head.c-qualified  { color: var(--green); }
+    .col-head.c-email      { color: var(--yellow); }
+    .col-head.c-contacted  { color: var(--orange); }
+
+    .col-count {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1px 8px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .cards {
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 74vh;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 11px;
+    }
+    .card:hover { border-color: var(--muted); }
+    .card-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 6px;
+    }
+    .card-meta { display: flex; flex-wrap: wrap; gap: 4px; }
+    .card-empty {
+      padding: 20px 14px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    /* ── settings ── */
+    .settings-wrap { max-width: 760px; }
+    .settings-wrap h1 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+    textarea {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 14px;
+      resize: vertical;
+      outline: none;
+    }
+    textarea:focus { border-color: var(--accent); }
+    .btn {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 8px 20px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn:hover { opacity: .88; }
+
+    /* ── stats ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .stat-value.accent { color: var(--accent); }
+    .stat-value.green  { color: var(--green); }
+    .stat-value.yellow { color: var(--yellow); }
+    .stat-value.orange { color: var(--orange); }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .domain-link { color: var(--accent); text-decoration: none; }
+    .domain-link:hover { text-decoration: underline; }
+  </style>
 </head>
 <body>
-  {% block content %}{% endblock %}
+  <nav>
+    <span class="nav-brand">Job<span>Agent</span></span>
+    <a href="/pipeline" {% if request.path == '/pipeline' or request.path == '/' %}class="active"{% endif %}>Pipeline</a>
+    <a href="/stats"    {% if request.path == '/stats' %}class="active"{% endif %}>Stats</a>
+    <a href="/settings" {% if request.path == '/settings' %}class="active"{% endif %}>Settings</a>
+  </nav>
+
+  <div class="page">
+    {% block content %}{% endblock %}
+  </div>
 </body>
 </html>
