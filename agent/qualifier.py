@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 
 import anthropic
@@ -45,6 +46,14 @@ Return this exact JSON and nothing else:
 {{"score": <int 0-10>, "remote_friendly": <bool>, "stack_match": <float 0.0-1.0>, "reasoning": "<one sentence>", "disqualify": <bool>}}"""
 
 
+def _unwrap_json(text: str) -> str:
+    """Strip markdown code fences Claude sometimes wraps JSON in."""
+    text = text.strip()
+    text = re.sub(r'^```(?:json)?\s*', '', text)
+    text = re.sub(r'\s*```$', '', text)
+    return text.strip()
+
+
 def _score_company(client: anthropic.Anthropic, company: dict, cfg: dict) -> dict | None:
     try:
         msg = client.messages.create(
@@ -53,7 +62,7 @@ def _score_company(client: anthropic.Anthropic, company: dict, cfg: dict) -> dic
             system=_SYSTEM,
             messages=[{'role': 'user', 'content': _build_prompt(company, cfg)}],
         )
-        text = msg.content[0].text.strip()
+        text = _unwrap_json(msg.content[0].text)
         return json.loads(text)
     except json.JSONDecodeError as exc:
         logger.error('JSON parse failed for %s: %s', company['name'], exc)
