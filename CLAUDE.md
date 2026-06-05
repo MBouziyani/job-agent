@@ -198,6 +198,18 @@ Within same tier: personal-type email > generic; then confidence descending.
 - `_best_contact` sorts by: (1) personal > generic type, (2) role tier, (3) confidence desc
   so the best personal email for the most senior role always wins
 
+### Bug fixed post-Session 5
+- `get_qualified_without_contact` used `NOT IN (SELECT DISTINCT company_id FROM contacts)`.
+  If `contacts.company_id` contains any NULL (possible when the table was created before the
+  `NOT NULL` constraint was tightened via `CREATE TABLE IF NOT EXISTS`), every `NOT IN` comparison
+  evaluates to NULL/unknown → zero rows returned even with a full DB.
+  Fixed: replaced with `NOT EXISTS (SELECT 1 FROM contacts WHERE contacts.company_id = companies.id)`,
+  which is NULL-safe. Same fix applied to the identical inline query in `dashboard/app.py`.
+- Also added `AND domain != ''` guard — Clearbit can store an empty string for companies it
+  can't resolve; these passed `IS NOT NULL` but broke Hunter.io's domain search.
+- Added explicit debug log: `get_qualified_without_contact returned N companies` logged before
+  the loop so the fetch count is visible even when Hunter.io calls are skipped.
+
 ### Not yet built (do NOT re-implement)
 - mailer.py, review.html, followup.py — Session 6+
 

@@ -152,7 +152,10 @@ def run_finder():
             SELECT * FROM companies
             WHERE qualified = 1
               AND domain IS NOT NULL
-              AND id NOT IN (SELECT DISTINCT company_id FROM contacts)
+              AND domain != ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM contacts WHERE contacts.company_id = companies.id
+              )
             ORDER BY remote_score DESC
         """).fetchall()
 

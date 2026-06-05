@@ -70,7 +70,10 @@ def run(conn, cfg: dict) -> dict:
         return {'processed': 0, 'found': 0, 'skipped': 0}
 
     companies = get_qualified_without_contact(conn)
-    logger.info('Finder: %d qualified companies need contacts', len(companies))
+    logger.info(
+        'Finder: get_qualified_without_contact returned %d companies (qualified=1, domain set, no contact yet)',
+        len(companies),
+    )
 
     processed = found = skipped = 0
 

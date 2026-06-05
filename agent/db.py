@@ -130,11 +130,17 @@ def update_company_qualification(
 
 
 def get_qualified_without_contact(conn: sqlite3.Connection) -> list[dict]:
+    # NOT EXISTS instead of NOT IN — NOT IN returns zero rows when the subquery
+    # contains any NULL (possible if company_id had no NOT NULL constraint on an
+    # older DB created before the schema was tightened).
     rows = conn.execute("""
         SELECT * FROM companies
         WHERE qualified = 1
           AND domain IS NOT NULL
-          AND id NOT IN (SELECT DISTINCT company_id FROM contacts)
+          AND domain != ''
+          AND NOT EXISTS (
+              SELECT 1 FROM contacts WHERE contacts.company_id = companies.id
+          )
         ORDER BY remote_score DESC
     """).fetchall()
     return [dict(row) for row in rows]
