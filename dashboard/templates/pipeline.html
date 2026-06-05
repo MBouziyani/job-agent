@@ -6,7 +6,37 @@
   <div class="banner banner-error">DB error: {{ error }}</div>
 {% endif %}
 
-<div class="kanban">
+<div class="kanban kanban-5">
+
+  <!-- ── All Scraped ── -->
+  <div class="col">
+    <div class="col-head c-all">
+      All Scraped
+      <span class="col-count">{{ all_scraped|length }}</span>
+    </div>
+    <div class="cards">
+      {% for c in all_scraped %}
+      <div class="card">
+        <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="card-meta">
+          {% if c.domain %}
+            <span class="badge bd">{{ c.domain }}</span>
+          {% endif %}
+          <span class="badge bm">{{ c.source }}</span>
+          {% if c.qualified is not none %}
+            {% if c.qualified == 1 %}
+              <span class="badge bg">score {{ c.remote_score | int }}</span>
+            {% else %}
+              <span class="badge br">score {{ c.remote_score | int }}</span>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="card-empty">No companies yet</div>
+      {% endfor %}
+    </div>
+  </div>
 
   <!-- ── Discovered ── -->
   <div class="col">

@@ -97,7 +97,51 @@ Note: `url` is a remoteok.com job page URL — DO NOT use for domain/dedup. Use 
 - All DB errors caught and shown as inline banners, dashboard never hard-crashes
 
 ### Not yet built (do NOT re-implement)
-- finder.py, mailer.py, followup.py — Session 4+
+- finder.py, mailer.py, followup.py — Session 5+
+- review.html (email approve/reject UI) — Session 5
+
+---
+
+## Session 4 status (completed 2026-06-05)
+
+### What was built
+- `dashboard/app.py` — added `/companies` route (filter: all/qualified/rejected/no_domain) and
+  `/force_qualify/<id>` POST endpoint; updated `/pipeline` to pass `all_scraped`; added
+  `rejection_rate` + `avg_score` to `/stats`
+- `dashboard/templates/pipeline.html` — 5th column "All Scraped" showing every company in DB
+  with name, source, domain badge, and colour-coded score badge (green = qualified, red = rejected)
+- `dashboard/templates/stats.html` — 2 new headline stat cards: rejection rate (%) and avg score;
+  grid now 10 cards in a 5-column layout; "Rejected" stat now uses red colour
+- `dashboard/templates/base.html` — `.kanban-5` modifier class for 5-column kanban grid;
+  `.br` red badge variant; `.btn-sm` green outlined button; `.filter-tab` pill style for
+  filter tabs; stat-grid expanded to 5 columns; `stat-value.red` colour token; "Companies"
+  nav link added
+- `dashboard/templates/companies.html` — NEW: full company browser with filter tabs, table
+  showing name/domain/score/status/source/created_at, "Force qualify" button per rejected row
+
+### What works
+- **All Scraped kanban column**: shows every company regardless of qualification, sorted newest
+  first; score badge is green for qualified=1, red for qualified=0, absent for unscored
+- **`/companies` route**: four filters — `all` (default), `qualified`, `rejected`, `no_domain`;
+  each renders the same table template with the active filter highlighted
+- **`/force_qualify/<id>`**: POST-only, sets `qualified=1` directly in DB, redirects back to
+  the referring page (companies list); bypasses scorer — intended for manual overrides
+- **Stats grid**: `rejection_rate` = `(rejected/total)*100` rounded to 1 dp, 0 if no companies;
+  `avg_score` = `AVG(remote_score)` over rows where `qualified IS NOT NULL` (excludes unscored
+  rows whose default is 0, which would skew the average)
+
+### Design decisions
+- Force-qualify only shown for `qualified=0` rows (rejected), not for pending/already-qualified
+- `/force_qualify` redirects to `request.referrer` so the user stays on whatever filtered view
+  they were on; falls back to `/companies` if referrer is absent
+- `avg_score` excludes unscored companies (qualified IS NULL) to avoid the default `remote_score=0`
+  dragging the average down before scoring runs
+- 5-column kanban grid uses a `.kanban-5` modifier class so the original `.kanban` 4-column style
+  is still available for any future narrow-kanban views
+- stat-grid widened from 4 to 5 columns to fit the 10 stat cards in two rows of 5
+
+### Not yet built (do NOT re-implement)
+- finder.py, mailer.py, followup.py — Session 5+
 - review.html (email approve/reject UI) — Session 5
 
 ---
@@ -150,13 +194,14 @@ job-agent/
 ├── dashboard/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── app.py            # Flask: pipeline / stats / settings / health
+│   ├── app.py            # Flask: pipeline / companies / stats / settings / health + force_qualify
 │   └── templates/
-│       ├── base.html     # dark CSS, nav
-│       ├── pipeline.html # 4-column kanban
+│       ├── base.html     # dark CSS, nav (4+5-col kanban, filter tabs, btn-sm, red badge)
+│       ├── pipeline.html # 5-column kanban (All Scraped + Discovered + Qualified + Email Found + Contacted)
+│       ├── companies.html # full company browser with filters + force-qualify button
 │       ├── review.html   # NOT YET BUILT — Session 5
 │       ├── settings.html # YAML editor, validates before save
-│       └── stats.html    # headline numbers + tables
+│       └── stats.html    # 10-card headline grid + top qualified table + by-source table
 └── data/
     ├── jobs.db
     └── config.yml
@@ -234,11 +279,11 @@ GMAIL_REFRESH_TOKEN → mailer.py sending
 FLASK_SECRET_KEY    → dashboard sessions
 ```
 
-## Pipeline flow (Sessions 1–3 implemented)
+## Pipeline flow (Sessions 1–4 implemented)
 ```
 1. scraper.py   → fetch new companies, dedup, Clearbit domain, insert to DB  ✓
 2. qualifier.py → score unqualified companies via Claude haiku, update DB     ✓
-3. finder.py    → Hunter.io lookup for qualified companies with NULL domain   (Session 4)
+3. finder.py    → Hunter.io lookup for qualified companies with NULL domain   (Session 5)
 4. mailer.py    → generate drafts via Claude sonnet, status='draft'           (Session 5)
 5. followup.py  → check emails sent 7 days ago, queue follow-ups              (Session 6)
 ```
@@ -283,11 +328,11 @@ Third container in docker-compose.yml. Shares `/data/jobs.db`.
 
 ## Build order
 ```
-Session 1: scraper.py + db.py + docker-compose skeleton          ✓ done
-Session 2: qualifier.py + Claude API + config.py                 ✓ done
-Session 3: Flask dashboard (pipeline / stats / settings)         ✓ done
-Session 4: finder.py + Hunter.io integration
-Session 5: mailer.py + review.html + Gmail OAuth
+Session 1: scraper.py + db.py + docker-compose skeleton                        ✓ done
+Session 2: qualifier.py + Claude API + config.py                               ✓ done
+Session 3: Flask dashboard (pipeline / stats / settings)                       ✓ done
+Session 4: dashboard enhancements — All Scraped column, /companies, force-qualify ✓ done
+Session 5: finder.py + Hunter.io integration + mailer.py + review.html + Gmail OAuth
 Session 6: followup.py + APScheduler wiring
 Session 7: Hermes Agent container + Telegram bot
 ```

@@ -18,7 +18,15 @@
   </div>
   <div class="stat-card">
     <div class="stat-label">Rejected</div>
-    <div class="stat-value" style="color:var(--muted)">{{ totals.rejected }}</div>
+    <div class="stat-value red">{{ totals.rejected }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Rejection rate</div>
+    <div class="stat-value red">{{ totals.rejection_rate }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Avg score</div>
+    <div class="stat-value yellow">{{ totals.avg_score }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Pending score</div>

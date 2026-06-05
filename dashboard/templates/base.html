@@ -86,6 +86,7 @@
     .by  { background: rgba(210,153,34,.15); color: var(--yellow); }
     .bo  { background: rgba(240,136,62,.15); color: var(--orange); }
     .bm  { background: rgba(125,133,144,.12); color: var(--muted); }
+    .br  { background: rgba(248,81,73,.15);  color: var(--red); }
 
     /* ── kanban ── */
     .kanban {
@@ -93,6 +94,9 @@
       grid-template-columns: repeat(4, 1fr);
       gap: 16px;
       align-items: start;
+    }
+    .kanban-5 {
+      grid-template-columns: repeat(5, 1fr);
     }
     .col {
       background: var(--surface);
@@ -111,6 +115,7 @@
       text-transform: uppercase;
       letter-spacing: .6px;
     }
+    .col-head.c-all       { color: var(--muted); }
     .col-head.c-discovered { color: var(--accent); }
     .col-head.c-qualified  { color: var(--green); }
     .col-head.c-email      { color: var(--yellow); }
@@ -188,11 +193,24 @@
       cursor: pointer;
     }
     .btn:hover { opacity: .88; }
+    .btn-sm {
+      display: inline-block;
+      padding: 3px 10px;
+      background: rgba(63,185,80,.18);
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid rgba(63,185,80,.35);
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 0;
+    }
+    .btn-sm:hover { background: rgba(63,185,80,.28); }
 
     /* ── stats ── */
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 12px;
       margin-bottom: 28px;
     }
@@ -208,6 +226,7 @@
     .stat-value.green  { color: var(--green); }
     .stat-value.yellow { color: var(--yellow); }
     .stat-value.orange { color: var(--orange); }
+    .stat-value.red    { color: var(--red); }
 
     .section-title {
       font-size: 13px;
@@ -248,14 +267,34 @@
     }
     .domain-link { color: var(--accent); text-decoration: none; }
     .domain-link:hover { text-decoration: underline; }
+
+    /* ── companies filter tabs ── */
+    .filter-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 18px;
+    }
+    .filter-tab {
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .filter-tab:hover { color: var(--text); border-color: var(--muted); }
+    .filter-tab.active { color: var(--text); border-color: var(--accent); background: rgba(88,166,255,.1); }
   </style>
 </head>
 <body>
   <nav>
     <span class="nav-brand">Job<span>Agent</span></span>
-    <a href="/pipeline" {% if request.path == '/pipeline' or request.path == '/' %}class="active"{% endif %}>Pipeline</a>
-    <a href="/stats"    {% if request.path == '/stats' %}class="active"{% endif %}>Stats</a>
-    <a href="/settings" {% if request.path == '/settings' %}class="active"{% endif %}>Settings</a>
+    <a href="/pipeline"  {% if request.path == '/pipeline' or request.path == '/' %}class="active"{% endif %}>Pipeline</a>
+    <a href="/companies" {% if request.path == '/companies' %}class="active"{% endif %}>Companies</a>
+    <a href="/stats"     {% if request.path == '/stats' %}class="active"{% endif %}>Stats</a>
+    <a href="/settings"  {% if request.path == '/settings' %}class="active"{% endif %}>Settings</a>
   </nav>
 
   <div class="page">

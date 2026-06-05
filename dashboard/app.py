@@ -62,18 +62,65 @@ def pipeline():
             ORDER BY e.sent_at DESC
         """).fetchall()
 
+        all_scraped = conn.execute(
+            'SELECT * FROM companies ORDER BY created_at DESC'
+        ).fetchall()
+
         conn.close()
     except Exception as exc:
         return render_template('pipeline.html', error=str(exc),
                                discovered=[], qualified=[],
-                               email_found=[], contacted=[])
+                               email_found=[], contacted=[], all_scraped=[])
 
     return render_template('pipeline.html',
                            discovered=discovered,
                            qualified=qualified,
                            email_found=email_found,
                            contacted=contacted,
+                           all_scraped=all_scraped,
                            error=None)
+
+
+# ── companies ─────────────────────────────────────────────────────────────────
+
+@app.route('/companies')
+def companies():
+    f = request.args.get('f', 'all')
+    try:
+        conn = _db()
+        if f == 'qualified':
+            rows = conn.execute(
+                'SELECT * FROM companies WHERE qualified = 1 ORDER BY remote_score DESC'
+            ).fetchall()
+        elif f == 'rejected':
+            rows = conn.execute(
+                'SELECT * FROM companies WHERE qualified = 0 ORDER BY remote_score DESC'
+            ).fetchall()
+        elif f == 'no_domain':
+            rows = conn.execute(
+                'SELECT * FROM companies WHERE domain IS NULL ORDER BY created_at DESC'
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT * FROM companies ORDER BY created_at DESC'
+            ).fetchall()
+        conn.close()
+    except Exception as exc:
+        return render_template('companies.html', error=str(exc), rows=[], f=f)
+
+    return render_template('companies.html', rows=rows, f=f, error=None)
+
+
+@app.route('/force_qualify/<int:company_id>', methods=['POST'])
+def force_qualify(company_id):
+    try:
+        conn = _db()
+        conn.execute('UPDATE companies SET qualified = 1 WHERE id = ?', (company_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return redirect(request.referrer or url_for('companies'))
 
 
 # ── settings ──────────────────────────────────────────────────────────────────
@@ -114,15 +161,23 @@ def stats():
         def scalar(sql):
             return conn.execute(sql).fetchone()[0] or 0
 
+        total     = scalar('SELECT COUNT(*) FROM companies')
+        rejected  = scalar('SELECT COUNT(*) FROM companies WHERE qualified = 0')
+        avg_score = conn.execute(
+            'SELECT AVG(remote_score) FROM companies WHERE qualified IS NOT NULL'
+        ).fetchone()[0]
+
         totals = {
-            'total':       scalar('SELECT COUNT(*) FROM companies'),
-            'qualified':   scalar('SELECT COUNT(*) FROM companies WHERE qualified = 1'),
-            'rejected':    scalar('SELECT COUNT(*) FROM companies WHERE qualified = 0'),
-            'pending':     scalar('SELECT COUNT(*) FROM companies WHERE qualified IS NULL'),
-            'with_domain': scalar('SELECT COUNT(*) FROM companies WHERE domain IS NOT NULL'),
-            'contacts':    scalar('SELECT COUNT(*) FROM contacts'),
-            'sent':        scalar("SELECT COUNT(*) FROM emails WHERE status = 'sent'"),
-            'replied':     scalar("SELECT COUNT(*) FROM emails WHERE status = 'replied'"),
+            'total':          total,
+            'qualified':      scalar('SELECT COUNT(*) FROM companies WHERE qualified = 1'),
+            'rejected':       rejected,
+            'pending':        scalar('SELECT COUNT(*) FROM companies WHERE qualified IS NULL'),
+            'with_domain':    scalar('SELECT COUNT(*) FROM companies WHERE domain IS NOT NULL'),
+            'contacts':       scalar('SELECT COUNT(*) FROM contacts'),
+            'sent':           scalar("SELECT COUNT(*) FROM emails WHERE status = 'sent'"),
+            'replied':        scalar("SELECT COUNT(*) FROM emails WHERE status = 'replied'"),
+            'rejection_rate': round(rejected / total * 100, 1) if total > 0 else 0,
+            'avg_score':      round(avg_score, 1) if avg_score is not None else 0,
         }
 
         by_source = conn.execute(

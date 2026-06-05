@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Companies — Job Agent{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="banner banner-error">DB error: {{ error }}</div>
+{% endif %}
+
+<div class="filter-tabs">
+  <a href="/companies?f=all"       class="filter-tab {% if f == 'all' %}active{% endif %}">All</a>
+  <a href="/companies?f=qualified" class="filter-tab {% if f == 'qualified' %}active{% endif %}">Qualified</a>
+  <a href="/companies?f=rejected"  class="filter-tab {% if f == 'rejected' %}active{% endif %}">Rejected</a>
+  <a href="/companies?f=no_domain" class="filter-tab {% if f == 'no_domain' %}active{% endif %}">No domain</a>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Company</th>
+        <th>Domain</th>
+        <th>Score</th>
+        <th>Status</th>
+        <th>Source</th>
+        <th>Added</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in rows %}
+      <tr>
+        <td style="font-weight:500">{{ c.name }}</td>
+        <td>
+          {% if c.domain %}
+            <a class="domain-link" href="https://{{ c.domain }}" target="_blank" rel="noopener">{{ c.domain }}</a>
+          {% else %}
+            <span style="color:var(--muted)">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if c.qualified is not none %}
+            {% if c.qualified == 1 %}
+              <span class="badge bg">{{ c.remote_score | int }}</span>
+            {% else %}
+              <span class="badge br">{{ c.remote_score | int }}</span>
+            {% endif %}
+          {% else %}
+            <span style="color:var(--muted)">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if c.qualified is none %}
+            <span class="badge bm">pending</span>
+          {% elif c.qualified == 1 %}
+            <span class="badge bg">qualified</span>
+          {% else %}
+            <span class="badge br">rejected</span>
+          {% endif %}
+        </td>
+        <td><span class="badge bm">{{ c.source }}</span></td>
+        <td style="color:var(--muted);white-space:nowrap">
+          {% if c.created_at %}{{ c.created_at[:10] }}{% endif %}
+        </td>
+        <td>
+          {% if c.qualified == 0 %}
+          <form method="post" action="/force_qualify/{{ c.id }}" style="margin:0">
+            <button type="submit" class="btn-sm">Force qualify</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" style="color:var(--muted);text-align:center;padding:24px">
+          No companies match this filter
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
