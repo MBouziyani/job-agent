@@ -18,13 +18,6 @@ _REMOTEOK_HEADERS = {
     'Accept': 'application/json',
 }
 
-# Hosting domains that belong to ATS platforms, not the actual company
-_ATS_DOMAINS = frozenset({
-    'greenhouse.io', 'lever.co', 'workable.com', 'jobvite.com',
-    'bamboohr.com', 'smartrecruiters.com', 'ashbyhq.com', 'rippling.com',
-    'recruitee.com', 'breezy.hr', 'remoteok.com',
-})
-
 _HIMALAYAS_HEADERS = {
     'User-Agent': (
         'Mozilla/5.0 (X11; Linux x86_64) '
@@ -55,30 +48,6 @@ def _strip_html(raw: str) -> str:
     return BeautifulSoup(raw, 'lxml').get_text(' ', strip=True)
 
 
-def _company_domain(job: dict) -> str | None:
-    """Return the best-effort domain for a RemoteOK job record.
-
-    RemoteOK frequently omits company_url, so we fall through three strategies:
-    1. company_url — the explicit company website
-    2. apply_url   — the application link, skipped if it's an ATS hosting domain
-    3. synthesised — slug built from company name, suffixed with .remoteok for isolation
-    """
-    domain = extract_domain(job.get('company_url') or '')
-    if domain and domain not in _ATS_DOMAINS:
-        return domain
-
-    domain = extract_domain(job.get('apply_url') or '')
-    if domain and domain not in _ATS_DOMAINS:
-        return domain
-
-    name = (job.get('company') or '').strip()
-    if name:
-        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
-        return f'{slug}.remoteok' if slug else None
-
-    return None
-
-
 def scrape_remoteok(conn, cfg: dict) -> int:
     logger.info('Scraping RemoteOK...')
     try:
@@ -93,41 +62,39 @@ def scrape_remoteok(conn, cfg: dict) -> int:
         logger.error('RemoteOK request failed: %s', exc)
         return 0
 
-    # First element is a legal notice dict — skip it
-    if jobs and isinstance(jobs[0], dict) and 'legal' in jobs[0]:
-        jobs = jobs[1:]
+    # Record 0 is a legal notice (no 'company' key) — filter it and any incomplete entries
+    jobs = [j for j in jobs if isinstance(j, dict) and j.get('company') and j.get('url')]
 
-    logger.debug('RemoteOK: %d raw records received from API (before filtering)', len(jobs))
-
+    # Deduplicate by domain extracted from the 'url' field
     seen_domains: set[str] = set()
-    new_count = 0
-
+    unique: list[tuple[dict, str]] = []
     for job in jobs:
-        if not isinstance(job, dict):
+        parsed = urlparse(job['url'])
+        netloc = parsed.netloc.lower()
+        if netloc.startswith('www.'):
+            netloc = netloc[4:]
+        if not netloc or netloc in seen_domains:
             continue
+        seen_domains.add(netloc)
+        unique.append((job, netloc))
 
-        domain = _company_domain(job)
-        if not domain or domain in seen_domains:
-            continue
-        seen_domains.add(domain)
+    logger.info('RemoteOK raw records: %d, after dedup: %d', len(jobs), len(unique))
 
+    new_count = 0
+    for job, domain in unique:
         if company_exists(conn, domain):
             continue
 
-        name = (job.get('company') or '').strip()
-        if not name:
-            continue
-
+        name = job['company'].strip()
         tags = job.get('tags') or []
         stack = ','.join(str(t) for t in tags)
-
         raw_desc = job.get('description') or ''
         description = _strip_html(raw_desc)[:500]
 
         company_data = {
             'name': name,
             'domain': domain,
-            'website': job.get('company_url') or job.get('apply_url') or '',
+            'website': job.get('apply_url') or job['url'],
             'headcount': None,
             'countries_count': None,
             'stack': stack,

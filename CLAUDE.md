@@ -19,6 +19,12 @@
 - `scraper.py` referenced undefined `_HEADERS` in both scrapers (silently caught by `except`, returned 0).
   Fixed: `scrape_remoteok` now uses `_REMOTEOK_HEADERS`; `scrape_himalayas` uses `_HIMALAYAS_HEADERS`.
 - `main.py` exited after one run. Fixed: wrapped in `while True` + `time.sleep(86400)`.
+- RemoteOK parser used wrong field names and guessed at domain extraction strategy.
+  Confirmed API fields via curl: `slug, id, epoch, date, company, company_logo, position,
+  tags, description, location, apply_url, salary_min, salary_max, logo, url`.
+  Fixed: skip record 0 by checking for absent `company` key (legal notice); extract domain
+  from `url` field via `urlparse(...).netloc`; dedup by domain; log `raw records: X, after dedup: Y`.
+- `docker-compose.yml` had obsolete `version: '3.8'` top-level key — removed.
 
 ### Not yet built (do NOT re-implement)
 - qualifier.py, finder.py, mailer.py, followup.py — Session 2+
