@@ -2,7 +2,7 @@ scraping:
   sources:
     remoteok: true
     we_work_remotely: true
-    remote_co: true
+    remotive: true
     jobspresso: true
     wellfound: false
 

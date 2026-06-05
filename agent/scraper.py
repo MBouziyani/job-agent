@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 
 from db import company_exists, insert_company, update_company_domain
 
-REMOTE_CO_URL = 'https://remote.co/remote-jobs/'
+REMOTIVE_API = 'https://remotive.com/api/remote-jobs'
 JOBSPRESSO_URL = 'https://jobspresso.co/remote-work/'
 WELLFOUND_URL = 'https://wellfound.com/jobs?remote=true'
 
@@ -186,48 +186,39 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
     return new_count
 
 
-def scrape_remote_co(conn, cfg: dict) -> int:
-    logger.info('Scraping Remote.co...')
+def scrape_remotive(conn, cfg: dict) -> int:
+    logger.info('Scraping Remotive API...')
     try:
         resp = requests.get(
-            REMOTE_CO_URL,
+            REMOTIVE_API,
             headers={'User-Agent': 'Mozilla/5.0'},
             timeout=30,
         )
         resp.raise_for_status()
+        jobs = resp.json().get('jobs', [])
     except Exception as exc:
-        logger.error('Remote.co request failed: %s', exc)
+        logger.error('Remotive request failed: %s', exc)
         return 0
 
-    soup = BeautifulSoup(resp.content, 'lxml')
-
-    # WP Job Manager structure: li.job_listing with .company strong
-    listings = soup.select('li.job_listing')
-    if not listings:
-        # Fallback: any element with job-related class
-        listings = soup.select('[class*="job_listing"]')
-    logger.info('Remote.co raw listings: %d', len(listings))
+    logger.info('Remotive raw records: %d', len(jobs))
 
     seen: set[str] = set()
     new_count = 0
 
-    for listing in listings:
-        company_el = listing.select_one('.company strong') or listing.select_one('.company')
-        if not company_el:
-            continue
-        name = _fix_encoding(company_el.get_text(strip=True))
+    for job in jobs:
+        name = _fix_encoding((job.get('company_name') or '').strip())
         if not name or name in seen:
             continue
         seen.add(name)
 
-        if company_exists(conn, name, 'remote_co'):
+        if company_exists(conn, name, 'remotive'):
             continue
 
-        link_el = listing.select_one('a')
-        website = link_el['href'] if link_el and link_el.get('href') else ''
-
-        desc_el = listing.select_one('.position h3') or listing.select_one('h3')
-        description = desc_el.get_text(strip=True) if desc_el else ''
+        tags = job.get('tags') or []
+        stack = ','.join(str(t) for t in tags)
+        raw_desc = job.get('description') or ''
+        description = _strip_html(raw_desc)[:500]
+        website = job.get('company_url') or job.get('url') or ''
 
         company_data = {
             'name': name,
@@ -235,9 +226,9 @@ def scrape_remote_co(conn, cfg: dict) -> int:
             'website': website,
             'headcount': None,
             'countries_count': None,
-            'stack': '',
+            'stack': stack,
             'description': description,
-            'source': 'remote_co',
+            'source': 'remotive',
             'remote_score': 0,
         }
 
@@ -252,7 +243,7 @@ def scrape_remote_co(conn, cfg: dict) -> int:
         except Exception as exc:
             logger.error('Insert failed for %s: %s', name, exc)
 
-    logger.info('Remote.co: added %d new companies', new_count)
+    logger.info('Remotive: added %d new companies', new_count)
     return new_count
 
 
@@ -413,8 +404,8 @@ def run_all(conn, cfg: dict) -> dict[str, int]:
     if sources.get('we_work_remotely', True):
         results['we_work_remotely'] = scrape_weworkremotely(conn, cfg)
 
-    if sources.get('remote_co', True):
-        results['remote_co'] = scrape_remote_co(conn, cfg)
+    if sources.get('remotive', True):
+        results['remotive'] = scrape_remotive(conn, cfg)
 
     if sources.get('jobspresso', True):
         results['jobspresso'] = scrape_jobspresso(conn, cfg)

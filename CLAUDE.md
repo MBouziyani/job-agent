@@ -404,8 +404,8 @@ id, email_id, scheduled_at, sent_at, status
 ## Scraping sources (active)
 - **RemoteOK** — free JSON API at `remoteok.com/api`, no auth
 - **We Work Remotely** — RSS feed at `weworkremotely.com/remote-jobs.rss`, no auth
-- **Remote.co** — BeautifulSoup HTML scraper on `https://remote.co/remote-jobs/`;
-  WP Job Manager layout: `li.job_listing .company strong`; source key `'remote_co'`
+- **Remotive** — free JSON API at `https://remotive.com/api/remote-jobs`, no auth;
+  returns `jobs[]` with `company_name`, `company_url`, `tags`, `description`; source key `'remotive'`
 - **Jobspresso** — BeautifulSoup HTML scraper on `https://jobspresso.co/remote-work/`;
   same WP Job Manager layout; source key `'jobspresso'`
 - **Wellfound** — Playwright (headless Chromium) on `https://wellfound.com/jobs?remote=true`;
@@ -422,7 +422,7 @@ scraping:
   sources:
     remoteok: true
     we_work_remotely: true
-    remote_co: true
+    remotive: true
     jobspresso: true
     wellfound: false
 
