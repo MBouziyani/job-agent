@@ -1,6 +1,5 @@
 import logging
 import time
-from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -17,20 +16,6 @@ _REMOTEOK_HEADERS = {
     'User-Agent': 'Mozilla/5.0',
     'Accept': 'application/json',
 }
-
-
-def extract_domain(url: str) -> str | None:
-    if not url:
-        return None
-    try:
-        if not url.startswith(('http://', 'https://')):
-            url = 'https://' + url
-        host = urlparse(url).netloc.lower()
-        if host.startswith('www.'):
-            host = host[4:]
-        return host or None
-    except Exception:
-        return None
 
 
 def _strip_html(raw: str) -> str:

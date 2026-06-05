@@ -68,7 +68,7 @@ def _score_company(client: anthropic.Anthropic, company: dict, cfg: dict) -> dic
         text = _unwrap_json(msg.content[0].text)
         return json.loads(text)
     except json.JSONDecodeError as exc:
-        logger.error('JSON parse failed for %s: %s', company['name'], exc)
+        logger.error('JSON parse failed for %s: %s | raw: %.200s', company['name'], exc, text)
     except anthropic.APIError as exc:
         logger.error('Claude API error for %s: %s', company['name'], exc)
     except Exception as exc:

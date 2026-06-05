@@ -1,9 +1,8 @@
 scraping:
   sources:
     remoteok: true
-    himalayas: true
     wellfound: false
-    we_work_remotely: false
+    we_work_remotely: true
 
 qualification:
   min_score: 4
