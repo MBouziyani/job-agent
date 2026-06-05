@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 MODEL = 'claude-haiku-4-5-20251001'
 
 _SYSTEM = (
-    'You are evaluating companies for a junior full-stack developer cold outreach campaign. '
-    'Respond ONLY with a valid JSON object — no markdown fences, no explanation.'
+    'You must respond with valid JSON only, no markdown, no explanation, no extra text. '
+    'You are evaluating companies for a junior full-stack developer cold outreach campaign.'
 )
 
 
@@ -42,8 +42,8 @@ Scoring rules (start at 0, max 10):
   -∞  INSTANT DISQUALIFY if any of these words appear: {excludes}
       (if disqualified, set score=0 and disqualify=true)
 
-Return this exact JSON and nothing else:
-{{"score": <int 0-10>, "remote_friendly": <bool>, "stack_match": <float 0.0-1.0>, "reasoning": "<one sentence>", "disqualify": <bool>}}"""
+Respond with exactly this JSON format:
+{{"score": 7, "remote_friendly": true, "stack_match": 0.8, "reasoning": "one sentence", "disqualify": false}}"""
 
 
 def _unwrap_json(text: str) -> str:
