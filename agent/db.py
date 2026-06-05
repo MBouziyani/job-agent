@@ -31,6 +31,7 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 description     TEXT,
                 source          TEXT,
                 remote_score    REAL DEFAULT 0,
+                qualified       INTEGER DEFAULT NULL,
                 created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(name, source)
             );
@@ -70,6 +71,12 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 FOREIGN KEY (email_id) REFERENCES emails(id)
             );
         """)
+    # Migration: add qualified column to databases created before Session 2
+    try:
+        conn.execute('ALTER TABLE companies ADD COLUMN qualified INTEGER DEFAULT NULL')
+        conn.commit()
+    except Exception:
+        pass  # column already exists
     logger.info('Database initialised at %s', db_path)
     conn.close()
 
@@ -99,4 +106,24 @@ def insert_company(conn: sqlite3.Connection, data: dict) -> int:
 
 def update_company_domain(conn: sqlite3.Connection, company_id: int, domain: str) -> None:
     conn.execute('UPDATE companies SET domain = ? WHERE id = ?', (domain, company_id))
+    conn.commit()
+
+
+def get_unqualified_companies(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        'SELECT * FROM companies WHERE qualified IS NULL ORDER BY created_at'
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_company_qualification(
+    conn: sqlite3.Connection,
+    company_id: int,
+    score: float,
+    qualified: bool,
+) -> None:
+    conn.execute(
+        'UPDATE companies SET remote_score = ?, qualified = ? WHERE id = ?',
+        (score, 1 if qualified else 0, company_id),
+    )
     conn.commit()

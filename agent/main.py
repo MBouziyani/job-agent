@@ -4,6 +4,7 @@ import time
 
 from config import load_config
 from db import get_conn, init_db
+from qualifier import run as qualify
 from scraper import run_all
 
 logging.basicConfig(
@@ -22,9 +23,13 @@ def run_pipeline() -> None:
     init_db()
     conn = get_conn()
     try:
-        results = run_all(conn, cfg)
-        total = sum(results.values())
-        logger.info('Scrape complete — new companies by source: %s (total=%d)', results, total)
+        scrape_results = run_all(conn, cfg)
+        logger.info(
+            'Scrape complete — %s (total=%d)',
+            scrape_results, sum(scrape_results.values()),
+        )
+        qual_results = qualify(conn, cfg)
+        logger.info('Qualification complete — %s', qual_results)
     finally:
         conn.close()
 

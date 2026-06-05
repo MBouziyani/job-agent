@@ -41,9 +41,37 @@ Note: `url` is the remoteok.com job page URL — DO NOT use for domain/dedup. Us
 - `docker-compose.yml` had obsolete `version: '3.8'` top-level key — removed.
 
 ### Not yet built (do NOT re-implement)
-- qualifier.py, finder.py, mailer.py, followup.py — Session 2+
+- finder.py, mailer.py, followup.py — Session 4+
 - Flask dashboard — Session 3
 - Wellfound scraper — deferred (requires Playwright)
+
+---
+
+## Session 2 status (completed 2026-06-05)
+
+### What was built
+- `agent/qualifier.py` — scores every unqualified company via Claude API, updates DB
+- `agent/db.py` — added `qualified INTEGER DEFAULT NULL` column + migration + two new helpers
+- `agent/main.py` — pipeline now runs scraper → qualifier in sequence
+
+### What works
+- `qualifier.run(conn, cfg)` fetches all companies where `qualified IS NULL`, scores each with
+  `claude-haiku-4-5-20251001`, parses JSON response, writes `remote_score` + `qualified` back to DB
+- Scoring follows CLAUDE.md rules: headcount, remote signals, stack overlap, exclude keywords
+- `min_score` read from `config.yml qualification.min_score` (default 7)
+- ANTHROPIC_API_KEY checked at runtime — logs clear error and returns early if missing
+- 0.5 s sleep between Claude calls to stay within haiku rate limits
+- Migration: `ALTER TABLE companies ADD COLUMN qualified INTEGER DEFAULT NULL` runs on startup,
+  silently skipped if column already exists — safe for existing `/data/jobs.db`
+
+### DB changes in Session 2
+- `companies.qualified` — NULL = not yet scored, 1 = qualified (score ≥ min_score), 0 = rejected
+- `companies.remote_score` — now written by qualifier (was always 0 from scraper)
+- New helpers: `get_unqualified_companies(conn)`, `update_company_qualification(conn, id, score, qualified)`
+
+### Not yet built (do NOT re-implement)
+- finder.py, mailer.py, followup.py — Session 4+
+- Flask dashboard — Session 3
 
 ---
 
