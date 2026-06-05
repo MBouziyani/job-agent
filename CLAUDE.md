@@ -235,10 +235,10 @@ Within same tier: personal-type email > generic; then confidence descending.
   body, same sign-off, subject always `Re: {original_subject}`; bans filler phrases explicitly
 - `followup_after_days` read from `config.yml outreach.followup_after_days` (currently 7)
 - `/run-followup`: identical inline logic to `followup.py`; redirects to /review with result banner
-- APScheduler `BlockingScheduler(timezone='UTC')` with `cron` trigger at `hour=8, minute=0`;
-  `misfire_grace_time=3600` so if the container was down at 8am it still runs within 1 hour
+- APScheduler `BlockingScheduler(timezone='UTC')` with `cron` trigger at `hour=10, minute=0`;
+  `misfire_grace_time=3600` so if the container was down at 10am it still runs within 1 hour
 - Startup run: `run_pipeline()` called directly before `scheduler.start()` so the first cycle
-  never waits until 8am; subsequent runs are always at 08:00 UTC
+  never waits until 10am; subsequent runs are always at 10:00 UTC
 
 ### Design decisions
 - Haiku (not Sonnet) for follow-ups: 2-3 sentences need no creativity or research — haiku is
@@ -350,7 +350,7 @@ job-agent/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── main.py           # entry point — scrape → qualify loop, sleep 24h
-│   ├── scraper.py        # RemoteOK + We Work Remotely + Clearbit domain lookup
+│   ├── scraper.py        # RemoteOK + WWR + Remote.co + Jobspresso + Wellfound + Clearbit
 │   ├── qualifier.py      # Claude haiku scoring, writes remote_score + qualified
 │   ├── finder.py         # Hunter.io domain search → contacts table
 │   ├── mailer.py         # Claude sonnet draft generation → emails table (status='draft')
@@ -404,18 +404,27 @@ id, email_id, scheduled_at, sent_at, status
 ## Scraping sources (active)
 - **RemoteOK** — free JSON API at `remoteok.com/api`, no auth
 - **We Work Remotely** — RSS feed at `weworkremotely.com/remote-jobs.rss`, no auth
+- **Remote.co** — BeautifulSoup HTML scraper on `https://remote.co/remote-jobs/`;
+  WP Job Manager layout: `li.job_listing .company strong`; source key `'remote_co'`
+- **Jobspresso** — BeautifulSoup HTML scraper on `https://jobspresso.co/remote-work/`;
+  same WP Job Manager layout; source key `'jobspresso'`
+- **Wellfound** — Playwright (headless Chromium) on `https://wellfound.com/jobs?remote=true`;
+  scrolls 3×, extracts company names from `a[href*="/company/"]` anchors; **disabled by default**
+  (set `wellfound: true` in config.yml to enable); source key `'wellfound'`
 
 Deduplication: `UNIQUE(name, source)` — checked before every insert.
 Domain discovery: Clearbit Autocomplete immediately after insert.
-Himalayas: dropped (persistent 403). Wellfound: deferred (requires Playwright).
+Himalayas: dropped (persistent 403).
 
 ## config.yml (current live values)
 ```yaml
 scraping:
   sources:
     remoteok: true
-    wellfound: false
     we_work_remotely: true
+    remote_co: true
+    jobspresso: true
+    wellfound: false
 
 qualification:
   min_score: 4          # temporary — raise to 7 after tuning scorer
@@ -465,7 +474,7 @@ FLASK_SECRET_KEY    → dashboard sessions
 4. mailer.py    → generate drafts via Claude sonnet, status='draft'           ✓
 5. followup.py  → check emails sent 7 days ago with no reply, draft followup ✓
 
-Scheduling: APScheduler BlockingScheduler — runs immediately on startup, then daily at 08:00 UTC
+Scheduling: APScheduler BlockingScheduler — runs immediately on startup, then daily at 10:00 UTC
 ```
 
 ## Email structure Claude must follow
@@ -514,10 +523,9 @@ Session 3: Flask dashboard (pipeline / stats / settings)                       �
 Session 4: dashboard enhancements — All Scraped column, /companies, force-qualify ✓ done
 Session 5: finder.py + Hunter.io integration                                  ✓ done
 Session 6: mailer.py + review.html + Gmail send + /approve /skip /run-mailer  ✓ done
-Session 7: followup.py + APScheduler + /run-followup                         ✓ done
-Session 8: Hermes Agent container + Telegram bot
-Session 6: followup.py + APScheduler wiring
-Session 7: Hermes Agent container + Telegram bot
+Session 7: followup.py + APScheduler (10:00 UTC) + /run-followup              ✓ done
+Session 8: Remote.co + Jobspresso + Wellfound scrapers added to scraper.py    ✓ done
+Session 9: Hermes Agent container + Telegram bot
 ```
 
 ## Rules for every session

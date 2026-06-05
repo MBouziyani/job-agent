@@ -6,6 +6,10 @@ from bs4 import BeautifulSoup
 
 from db import company_exists, insert_company, update_company_domain
 
+REMOTE_CO_URL = 'https://remote.co/remote-jobs/'
+JOBSPRESSO_URL = 'https://jobspresso.co/remote-work/'
+WELLFOUND_URL = 'https://wellfound.com/jobs?remote=true'
+
 logger = logging.getLogger(__name__)
 
 REMOTEOK_API = 'https://remoteok.com/api'
@@ -182,6 +186,223 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
     return new_count
 
 
+def scrape_remote_co(conn, cfg: dict) -> int:
+    logger.info('Scraping Remote.co...')
+    try:
+        resp = requests.get(
+            REMOTE_CO_URL,
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error('Remote.co request failed: %s', exc)
+        return 0
+
+    soup = BeautifulSoup(resp.content, 'lxml')
+
+    # WP Job Manager structure: li.job_listing with .company strong
+    listings = soup.select('li.job_listing')
+    if not listings:
+        # Fallback: any element with job-related class
+        listings = soup.select('[class*="job_listing"]')
+    logger.info('Remote.co raw listings: %d', len(listings))
+
+    seen: set[str] = set()
+    new_count = 0
+
+    for listing in listings:
+        company_el = listing.select_one('.company strong') or listing.select_one('.company')
+        if not company_el:
+            continue
+        name = _fix_encoding(company_el.get_text(strip=True))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+
+        if company_exists(conn, name, 'remote_co'):
+            continue
+
+        link_el = listing.select_one('a')
+        website = link_el['href'] if link_el and link_el.get('href') else ''
+
+        desc_el = listing.select_one('.position h3') or listing.select_one('h3')
+        description = desc_el.get_text(strip=True) if desc_el else ''
+
+        company_data = {
+            'name': name,
+            'domain': None,
+            'website': website,
+            'headcount': None,
+            'countries_count': None,
+            'stack': '',
+            'description': description,
+            'source': 'remote_co',
+            'remote_score': 0,
+        }
+
+        try:
+            row_id = insert_company(conn, company_data)
+            new_count += 1
+            domain = _clearbit_domain(name)
+            if domain:
+                update_company_domain(conn, row_id, domain)
+            logger.debug('Added %s%s', name, f' → {domain}' if domain else '')
+            time.sleep(0.2)
+        except Exception as exc:
+            logger.error('Insert failed for %s: %s', name, exc)
+
+    logger.info('Remote.co: added %d new companies', new_count)
+    return new_count
+
+
+def scrape_jobspresso(conn, cfg: dict) -> int:
+    logger.info('Scraping Jobspresso...')
+    try:
+        resp = requests.get(
+            JOBSPRESSO_URL,
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error('Jobspresso request failed: %s', exc)
+        return 0
+
+    soup = BeautifulSoup(resp.content, 'lxml')
+
+    # WP Job Manager structure
+    listings = soup.select('li.job_listing')
+    if not listings:
+        listings = soup.select('[class*="job_listing"]')
+    logger.info('Jobspresso raw listings: %d', len(listings))
+
+    seen: set[str] = set()
+    new_count = 0
+
+    for listing in listings:
+        company_el = listing.select_one('.company strong') or listing.select_one('.company')
+        if not company_el:
+            continue
+        name = _fix_encoding(company_el.get_text(strip=True))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+
+        if company_exists(conn, name, 'jobspresso'):
+            continue
+
+        link_el = listing.select_one('a')
+        website = link_el['href'] if link_el and link_el.get('href') else ''
+
+        desc_el = listing.select_one('h3') or listing.select_one('.position')
+        description = desc_el.get_text(strip=True) if desc_el else ''
+
+        company_data = {
+            'name': name,
+            'domain': None,
+            'website': website,
+            'headcount': None,
+            'countries_count': None,
+            'stack': '',
+            'description': description,
+            'source': 'jobspresso',
+            'remote_score': 0,
+        }
+
+        try:
+            row_id = insert_company(conn, company_data)
+            new_count += 1
+            domain = _clearbit_domain(name)
+            if domain:
+                update_company_domain(conn, row_id, domain)
+            logger.debug('Added %s%s', name, f' → {domain}' if domain else '')
+            time.sleep(0.2)
+        except Exception as exc:
+            logger.error('Insert failed for %s: %s', name, exc)
+
+    logger.info('Jobspresso: added %d new companies', new_count)
+    return new_count
+
+
+def scrape_wellfound(conn, cfg: dict) -> int:
+    logger.info('Scraping Wellfound (Playwright)...')
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        logger.error('Playwright not installed — skipping Wellfound')
+        return 0
+
+    names: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page(user_agent='Mozilla/5.0')
+            page.goto(WELLFOUND_URL, wait_until='networkidle', timeout=60000)
+
+            # Scroll 3 times to load more listings
+            for _ in range(3):
+                page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                page.wait_for_timeout(2000)
+
+            # Company links are /company/<slug>; extract unique slugs → display names
+            anchors = page.query_selector_all('a[href*="/company/"]')
+            seen_hrefs: set[str] = set()
+            for a in anchors:
+                href = a.get_attribute('href') or ''
+                if href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
+                text = (a.inner_text() or '').strip()
+                if text and len(text) > 1:
+                    names.append(text)
+
+            browser.close()
+    except Exception as exc:
+        logger.error('Wellfound Playwright error: %s', exc)
+        return 0
+
+    logger.info('Wellfound raw company names: %d', len(names))
+
+    seen: set[str] = set()
+    new_count = 0
+
+    for raw_name in names:
+        name = _fix_encoding(raw_name)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+
+        if company_exists(conn, name, 'wellfound'):
+            continue
+
+        company_data = {
+            'name': name,
+            'domain': None,
+            'website': '',
+            'headcount': None,
+            'countries_count': None,
+            'stack': '',
+            'description': '',
+            'source': 'wellfound',
+            'remote_score': 0,
+        }
+
+        try:
+            row_id = insert_company(conn, company_data)
+            new_count += 1
+            domain = _clearbit_domain(name)
+            if domain:
+                update_company_domain(conn, row_id, domain)
+            logger.debug('Added %s%s', name, f' → {domain}' if domain else '')
+            time.sleep(0.2)
+        except Exception as exc:
+            logger.error('Insert failed for %s: %s', name, exc)
+
+    logger.info('Wellfound: added %d new companies', new_count)
+    return new_count
+
+
 def run_all(conn, cfg: dict) -> dict[str, int]:
     sources = cfg.get('scraping', {}).get('sources', {})
     results: dict[str, int] = {}
@@ -191,5 +412,14 @@ def run_all(conn, cfg: dict) -> dict[str, int]:
 
     if sources.get('we_work_remotely', True):
         results['we_work_remotely'] = scrape_weworkremotely(conn, cfg)
+
+    if sources.get('remote_co', True):
+        results['remote_co'] = scrape_remote_co(conn, cfg)
+
+    if sources.get('jobspresso', True):
+        results['jobspresso'] = scrape_jobspresso(conn, cfg)
+
+    if sources.get('wellfound', False):
+        results['wellfound'] = scrape_wellfound(conn, cfg)
 
     return results

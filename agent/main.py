@@ -57,11 +57,11 @@ def main() -> None:
     scheduler.add_job(
         run_pipeline,
         trigger='cron',
-        hour=8,
+        hour=10,
         minute=0,
-        misfire_grace_time=3600,  # still run if container was down at 8am, up to 1h late
+        misfire_grace_time=3600,  # still run if container was down at 10am, up to 1h late
     )
-    logger.info('Scheduler started — next run at 08:00 UTC')
+    logger.info('Scheduler started — next run at 10:00 UTC')
 
     try:
         scheduler.start()

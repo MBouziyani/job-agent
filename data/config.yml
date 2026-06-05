@@ -1,8 +1,10 @@
 scraping:
   sources:
     remoteok: true
-    wellfound: false
     we_work_remotely: true
+    remote_co: true
+    jobspresso: true
+    wellfound: false
 
 qualification:
   min_score: 4
