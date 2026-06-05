@@ -6,7 +6,7 @@ scraping:
     we_work_remotely: false
 
 qualification:
-  min_score: 7
+  min_score: 4
   min_countries: 3
   max_headcount: 150
   stack_keywords:

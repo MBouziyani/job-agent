@@ -23,15 +23,18 @@ def _build_prompt(company: dict, cfg: dict) -> str:
     keywords = ', '.join(qual.get('stack_keywords', []))
     excludes = ', '.join(qual.get('exclude_keywords', []))
 
-    return f"""Evaluate this company for cold outreach from a remote junior developer
-(target stack: Java, Spring Boot, React, TypeScript, Docker, PostgreSQL).
+    return f"""Evaluate this company for cold outreach from a remote junior developer.
 
-Company:     {company['name']}
-Domain:      {company['domain'] or 'unknown'}
-Website:     {company['website'] or 'none'}
-Description: {(company['description'] or 'none')[:400]}
-Tags/Stack:  {company['stack'] or 'unknown'}
-Headcount:   {company['headcount'] or 'unknown'}
+Company name: {company['name']}
+Domain:       {company['domain'] or 'unknown'}
+Description:  {(company['description'] or 'none')[:400]}
+Tags/Stack:   {company['stack'] or 'unknown'}
+Headcount:    {company['headcount'] or 'unknown'}
+
+Score based ONLY on remote-friendliness potential. Most tech companies hiring on RemoteOK
+are at least partially remote. Be generous — a score of 5+ means worth investigating further.
+Only score 0-2 for companies that are obviously not remote (restaurants, physical retail,
+local services).
 
 Scoring rules (start at 0, max 10):
   +3  headcount 10–80
