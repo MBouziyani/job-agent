@@ -21,7 +21,7 @@
 - `main.py` loops forever — run pipeline, sleep 24 h, repeat (APScheduler replaces in Session 6)
 
 ### DB schema decisions
-- `companies.domain` nullable — Clearbit fills it at scrape time; NULLs handled by finder.py (Session 4)
+- `companies.domain` nullable — Clearbit fills it at scrape time; finder.py skips companies where domain IS NULL or ''
 - Unique constraint is `UNIQUE(name, source)` — not on `domain`
 - **Schema changed on existing DB**: delete `/data/jobs.db` and restart
 
@@ -211,8 +211,50 @@ Within same tier: personal-type email > generic; then confidence descending.
   the loop so the fetch count is visible even when Hunter.io calls are skipped.
 
 ### Not yet built (do NOT re-implement)
-- followup.py — Session 7
-- APScheduler wiring — Session 7
+- Hermes Agent / Telegram bot — Session 8
+
+---
+
+## Session 7 status (completed 2026-06-05)
+
+### What was built
+- `agent/followup.py` — checks sent emails ≥ N days old with no reply, generates short
+  follow-up via `claude-haiku-4-5-20251001`, inserts new draft into `emails` table
+- `agent/db.py` — added `get_emails_needing_followup(conn, days)` helper
+- `agent/main.py` — replaced `while True / time.sleep(86400)` with APScheduler
+  `BlockingScheduler`; pipeline runs immediately on startup then daily at 08:00 UTC
+- `dashboard/app.py` — added `/run-followup` POST route + `_build_followup_prompt()` helper
+- `dashboard/templates/review.html` — added "Run Followup" button (yellow) alongside "Run Mailer"
+
+### What works
+- `followup.run(conn, cfg)`: queries `emails` where `status='sent'`, `sent_at <= now - N days`,
+  and `NOT EXISTS` any other email for the same company (catches drafts, sent followups, and
+  skipped followups — prevents generating a second followup if one already exists as a draft);
+  generates 2-3 sentence follow-up via haiku; inserts as new `emails` row with `status='draft'`
+- Follow-up prompt: references the original subject, asks if they had a chance to look, ≤ 50 words
+  body, same sign-off, subject always `Re: {original_subject}`; bans filler phrases explicitly
+- `followup_after_days` read from `config.yml outreach.followup_after_days` (currently 7)
+- `/run-followup`: identical inline logic to `followup.py`; redirects to /review with result banner
+- APScheduler `BlockingScheduler(timezone='UTC')` with `cron` trigger at `hour=8, minute=0`;
+  `misfire_grace_time=3600` so if the container was down at 8am it still runs within 1 hour
+- Startup run: `run_pipeline()` called directly before `scheduler.start()` so the first cycle
+  never waits until 8am; subsequent runs are always at 08:00 UTC
+
+### Design decisions
+- Haiku (not Sonnet) for follow-ups: 2-3 sentences need no creativity or research — haiku is
+  faster, cheaper, and more than capable of short templated text
+- `NOT EXISTS (SELECT 1 FROM emails e2 WHERE e2.company_id = e.company_id AND e2.id != e.id)`
+  as the "already followed up" check: catches any state of follow-up (draft / sent / skipped)
+  without needing a separate `followups` table or a `type` column; the existing `followups` table
+  remains in the schema but is unused — left for future multi-stage followup logic
+- Follow-ups stored as new rows in `emails` table (not in `followups` table) — keeps the review
+  queue unified; "Re: " subject prefix makes them visually distinct in review.html
+- `misfire_grace_time=3600` on the APScheduler job: container restarts or brief downtime around
+  8am UTC won't silently miss a day's run
+- No `time` import needed in main.py any more — removed
+
+### DB helper added in Session 7
+- `get_emails_needing_followup(conn, days=7)` — `status='sent' AND sent_at <= datetime('now', '-N days') AND NOT EXISTS (other email for same company)`; returns full company + contact join
 
 ---
 
@@ -312,7 +354,7 @@ job-agent/
 │   ├── qualifier.py      # Claude haiku scoring, writes remote_score + qualified
 │   ├── finder.py         # Hunter.io domain search → contacts table
 │   ├── mailer.py         # Claude sonnet draft generation → emails table (status='draft')
-│   ├── followup.py       # NOT YET BUILT — Session 7
+│   ├── followup.py       # follow-up draft generation via Claude haiku → emails table
 │   └── config.py         # loads /data/config.yml
 ├── dashboard/
 │   ├── Dockerfile
@@ -415,13 +457,15 @@ FLASK_SECRET_KEY    → dashboard sessions
 - Scope: `https://www.googleapis.com/auth/gmail.send` (send-only, no read access)
 - `credentials.json` and `get_token.py` are project-root only; neither goes into a container
 
-## Pipeline flow (Sessions 1–6 implemented)
+## Pipeline flow (Sessions 1–7 implemented — fully automated)
 ```
 1. scraper.py   → fetch new companies, dedup, Clearbit domain, insert to DB  ✓
 2. qualifier.py → score unqualified companies via Claude haiku, update DB     ✓
 3. finder.py    → Hunter.io lookup for qualified companies with a domain      ✓
 4. mailer.py    → generate drafts via Claude sonnet, status='draft'           ✓
-5. followup.py  → check emails sent 7 days ago, queue follow-ups              (Session 7)
+5. followup.py  → check emails sent 7 days ago with no reply, draft followup ✓
+
+Scheduling: APScheduler BlockingScheduler — runs immediately on startup, then daily at 08:00 UTC
 ```
 
 ## Email structure Claude must follow
@@ -470,7 +514,8 @@ Session 3: Flask dashboard (pipeline / stats / settings)                       �
 Session 4: dashboard enhancements — All Scraped column, /companies, force-qualify ✓ done
 Session 5: finder.py + Hunter.io integration                                  ✓ done
 Session 6: mailer.py + review.html + Gmail send + /approve /skip /run-mailer  ✓ done
-Session 7: followup.py + APScheduler wiring
+Session 7: followup.py + APScheduler + /run-followup                         ✓ done
+Session 8: Hermes Agent container + Telegram bot
 Session 6: followup.py + APScheduler wiring
 Session 7: Hermes Agent container + Telegram bot
 ```

@@ -134,6 +134,38 @@ Return exactly this JSON (no other text):
 {{"subject": "...", "body": "..."}}"""
 
 
+_FOLLOWUP_SIGN_OFF = 'Mohammed Bouziyani | mb.bouziyani@gmail.com | linkedin.com/in/mohammed-bouziyani'
+
+
+def _build_followup_prompt(email: dict) -> str:
+    contact    = email.get('contact_name') or ''
+    first_name = contact.split()[0] if contact else 'there'
+    contact_role = email.get('contact_role') or ''
+    to_line    = f'{contact} ({contact_role})' if contact_role else (contact or 'the team')
+
+    return f"""Write a 2-3 sentence follow-up email from Mohammed Bouziyani.
+
+Original email:
+  To:      {to_line} at {email['company_name']}
+  Subject: {email['subject']}
+  Sent:    {str(email.get('sent_at', ''))[:10]}
+
+Requirements:
+  - Open with a natural one-line reference to the previous email
+  - One simple question: did they have a chance to look at it?
+  - Keep it light — no pressure, no guilt
+  - Address {first_name} by first name
+  - End with sign-off: {_FOLLOWUP_SIGN_OFF}
+
+Hard rules:
+  - Body (excluding sign-off) ≤ 50 words — 2-3 sentences only
+  - No filler: "I hope this finds you well", "circle back", "touch base"
+  - Subject must be: Re: {email['subject']}
+
+Return exactly this JSON:
+{{"subject": "Re: {email['subject']}", "body": "..."}}"""
+
+
 def _run_mailer_for(conn, targets, max_drafts: int) -> tuple[int, int]:
     import anthropic
     api_key = os.environ.get('ANTHROPIC_API_KEY')
@@ -377,6 +409,83 @@ def run_mailer():
 
     return redirect(url_for('review',
                             msg=f'Mailer done — {drafted} drafts created ({skipped} skipped)'))
+
+
+# ── followup trigger ──────────────────────────────────────────────────────────
+
+@app.route('/run-followup', methods=['POST'])
+def run_followup():
+    import anthropic as _anthropic
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        return redirect(url_for('review', msg='ANTHROPIC_API_KEY not set'))
+
+    try:
+        conn = _db()
+
+        try:
+            cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding='utf-8')) or {}
+        except Exception:
+            cfg = {}
+        days = cfg.get('outreach', {}).get('followup_after_days', 7)
+
+        targets = conn.execute("""
+            SELECT
+                e.*,
+                c.name  AS company_name,
+                ct.name AS contact_name,
+                ct.role AS contact_role
+            FROM emails e
+            JOIN companies c  ON c.id  = e.company_id
+            LEFT JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.status = 'sent'
+              AND e.sent_at <= datetime('now', ?)
+              AND NOT EXISTS (
+                  SELECT 1 FROM emails e2
+                  WHERE e2.company_id = e.company_id
+                    AND e2.id != e.id
+              )
+            ORDER BY e.sent_at ASC
+        """, (f'-{days} days',)).fetchall()
+
+        client  = _anthropic.Anthropic(api_key=api_key)
+        drafted = skipped = 0
+
+        for row in targets:
+            email = dict(row)
+            try:
+                msg = client.messages.create(
+                    model='claude-haiku-4-5-20251001',
+                    max_tokens=256,
+                    system='You are writing a brief cold email follow-up. Respond with valid JSON only.',
+                    messages=[{'role': 'user', 'content': _build_followup_prompt(email)}],
+                )
+                text = msg.content[0].text.strip()
+                text = re.sub(r'^```(?:json)?\s*', '', text)
+                text = re.sub(r'\s*```$', '', text)
+                result = json.loads(text.strip())
+            except Exception:
+                skipped += 1
+                continue
+
+            if not result.get('subject') or not result.get('body'):
+                skipped += 1
+                continue
+
+            conn.execute(
+                "INSERT INTO emails (company_id, contact_id, subject, body, status) VALUES (?, ?, ?, ?, 'draft')",
+                (email['company_id'], email['contact_id'], result['subject'], result['body']),
+            )
+            conn.commit()
+            drafted += 1
+
+        conn.close()
+    except Exception as exc:
+        return redirect(url_for('review', msg=f'Followup error: {exc}'))
+
+    return redirect(url_for('review',
+                            msg=f'Followup done — {drafted} drafts created ({skipped} skipped)'))
 
 
 # ── finder trigger ─────────────────────────────────────────────────────────────

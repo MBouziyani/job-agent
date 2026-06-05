@@ -1,10 +1,12 @@
 import logging
 import sys
-import time
+
+from apscheduler.schedulers.blocking import BlockingScheduler
 
 from config import load_config
 from db import get_conn, init_db
 from finder import run as find_contacts
+from followup import run as send_followups
 from mailer import run as draft_emails
 from qualifier import run as qualify
 from scraper import run_all
@@ -17,10 +19,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SLEEP_SECONDS = 86400  # replaced by APScheduler in Session 7
-
 
 def run_pipeline() -> None:
+    logger.info('Pipeline starting')
     cfg = load_config()
     init_db()
     conn = get_conn()
@@ -38,16 +39,34 @@ def run_pipeline() -> None:
 
         mailer_results = draft_emails(conn, cfg)
         logger.info('Mailer complete — %s', mailer_results)
+
+        followup_results = send_followups(conn, cfg)
+        logger.info('Followup complete — %s', followup_results)
     finally:
         conn.close()
+    logger.info('Pipeline complete')
 
 
 def main() -> None:
-    logger.info('Job agent starting')
-    while True:
-        run_pipeline()
-        logger.info('Sleeping %ds until next run', SLEEP_SECONDS)
-        time.sleep(SLEEP_SECONDS)
+    logger.info('Job agent starting — running pipeline now, then daily at 08:00 UTC')
+
+    # Run immediately on startup so the first cycle doesn't wait until 8am.
+    run_pipeline()
+
+    scheduler = BlockingScheduler(timezone='UTC')
+    scheduler.add_job(
+        run_pipeline,
+        trigger='cron',
+        hour=8,
+        minute=0,
+        misfire_grace_time=3600,  # still run if container was down at 8am, up to 1h late
+    )
+    logger.info('Scheduler started — next run at 08:00 UTC')
+
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info('Scheduler stopped')
 
 
 if __name__ == '__main__':

@@ -197,3 +197,29 @@ def insert_email_draft(
     )
     conn.commit()
     return cursor.lastrowid
+
+
+def get_emails_needing_followup(conn: sqlite3.Connection, days: int = 7) -> list[dict]:
+    rows = conn.execute("""
+        SELECT
+            e.*,
+            c.name        AS company_name,
+            c.domain      AS company_domain,
+            c.description AS company_description,
+            c.stack       AS company_stack,
+            ct.name       AS contact_name,
+            ct.role       AS contact_role,
+            ct.email      AS contact_email
+        FROM emails e
+        JOIN companies c  ON c.id  = e.company_id
+        LEFT JOIN contacts ct ON ct.id = e.contact_id
+        WHERE e.status = 'sent'
+          AND e.sent_at <= datetime('now', ?)
+          AND NOT EXISTS (
+              SELECT 1 FROM emails e2
+              WHERE e2.company_id = e.company_id
+                AND e2.id != e.id
+          )
+        ORDER BY e.sent_at ASC
+    """, (f'-{days} days',)).fetchall()
+    return [dict(row) for row in rows]

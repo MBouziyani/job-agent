@@ -20,9 +20,14 @@
       <span class="col-count" style="margin-left:8px;font-size:14px">{{ drafts|length }}</span>
     {% endif %}
   </div>
-  <form method="post" action="/run-mailer">
-    <button type="submit" class="btn" style="margin-top:0">Run Mailer</button>
-  </form>
+  <div style="display:flex;gap:10px">
+    <form method="post" action="/run-followup">
+      <button type="submit" class="btn" style="margin-top:0;background:var(--yellow);color:#000">Run Followup</button>
+    </form>
+    <form method="post" action="/run-mailer">
+      <button type="submit" class="btn" style="margin-top:0">Run Mailer</button>
+    </form>
+  </div>
 </div>
 
 {% if not drafts %}
