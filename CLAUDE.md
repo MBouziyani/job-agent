@@ -500,14 +500,24 @@ Scheduling: APScheduler BlockingScheduler — runs immediately on startup, then 
 ```
 Subject: specific, references company or role
 
-Line 1 — hook: category-specific (see table below)
+Line 1 — hook: category-specific style (see table below)
 Line 2 — relevance: category-specific angle
-Line 3 — proof: category-specific proof point
+Line 3 — proof: chosen from three rotating proof points (see below)
 Line 4 — ask: "Would a 15-min call make sense?"
 
 Max 150 words. No fluff. No "I am passionate about technology".
 Sign-off: Mohammed Bouziyani | mb.bouziyani@gmail.com | linkedin.com/in/mohammed-bouziyani
 ```
+
+### Three rotating proof points
+
+Claude chooses one per email based on the category preference below.
+
+| Label | Description |
+|---|---|
+| **A** | Networia medical system (Jun–Aug 2023): Spring Boot + React medical practice management, JWT, production-deployed — healthcare domain, Java depth |
+| **B** | Vision Business Consulting (Mar–Sep 2024): web + mobile apps for enterprise clients in manufacturing and healthcare sectors, 20% performance gain — enterprise scale, French-language context |
+| **C** | Job Search Agent (2025): multi-agent AI pipeline, Claude API, Docker Compose on DigitalOcean (4 GB VPS), APScheduler, Flask — LLM integration + self-managed production infra |
 
 ### Company category classification (mailer.py + dashboard/app.py)
 
@@ -515,16 +525,16 @@ Each company is classified before drafting. Classification uses description + st
 (and `.fr` domain suffix for FRENCH_STARTUP). Priority order: AI_COMPANY → DEVOPS_CLOUD →
 FRENCH_STARTUP → JAVA_SPRING → NODEJS_PYTHON → GENERAL_TECH.
 
-| Category | Detection keywords | Email angle |
-|---|---|---|
-| `AI_COMPANY` | machine learning, llm, langchain, openai, generative ai, neural network, nlp, embedding, vector database | Lead with Job Agent AI project + Claude API integration; proof = Job Search Agent deployed on DigitalOcean |
-| `DEVOPS_CLOUD` | kubernetes, terraform, ci/cd, platform engineering, sre, infrastructure as code, gitops, helm | Lead with multi-container Docker deployment, VPS self-management; proof = Docker Compose system in production |
-| `FRENCH_STARTUP` | france, french, paris, lyon, francophone + `.fr` domain | Lead with French C1, Morocco UTC+1 timezone, BASF enterprise experience; proof = Vision Business Consulting delivery |
-| `JAVA_SPRING` | spring boot, spring framework, hibernate, micronaut, quarkus, kotlin | Lead with Spring Boot internship depth; proof = Networia JWT + SonarQube + Docker |
-| `NODEJS_PYTHON` | node.js, nodejs, nestjs, django, fastapi, flask, python backend | Lead with full-stack versatility + Python in production; proof = job agent pipeline + e-commerce platform |
-| `GENERAL_TECH` | (fallback) | Balanced approach — hook on their product/stack, relevance on Java + React, best-fit proof |
+| Category | Detection keywords | Hook style | Proof preference |
+|---|---|---|---|
+| `AI_COMPANY` | machine learning, llm, langchain, openai, generative ai, neural network, nlp, embedding, vector database | Specific technical observation about their AI approach — model choice, RAG arch, inference pattern. Not generic praise. | Prefer C, fall back to A |
+| `DEVOPS_CLOUD` | kubernetes, terraform, ci/cd, platform engineering, sre, infrastructure as code, gitops, helm | Infrastructure/scale observation — name the tool and say something about how they use it. | Prefer C, fall back to A |
+| `FRENCH_STARTUP` | france, french, paris, lyon, francophone + `.fr` domain | First sentence in French (specific, not generic), rest in English. | Prefer B, fall back to A |
+| `JAVA_SPRING` | spring boot, spring framework, hibernate, micronaut, quarkus, kotlin | Name a specific technical detail from their stack — a Spring module, architectural pattern, or library. | Prefer A, fall back to B |
+| `NODEJS_PYTHON` | node.js, nodejs, nestjs, django, fastapi, flask, python backend | Versatility angle — acknowledge their stack, show cross-language fluency through concrete work (not "fast learner"). | Prefer C, fall back to A |
+| `GENERAL_TECH` | (fallback) | Something specific from their description — product decision, stack choice, open-source work. | Best fit from A/B/C |
 
-Both `agent/mailer.py` and `dashboard/app.py` contain the full classifier + angle dict (kept in sync manually due to two-container architecture).
+Both `agent/mailer.py` and `dashboard/app.py` contain `_PROOFS` + full classifier + angle dict (kept in sync manually — two-container architecture makes imports impossible).
 
 ## Mohammed's profile (for email generation)
 ```
@@ -534,7 +544,7 @@ Location: Morocco — open to remote worldwide
 
 Experience:
   Networia (Feb–May 2025):             task management app, Spring Boot + React, JWT, Docker, SonarQube
-  Vision Business Consulting (Mar–Sep 2024): web + mobile apps for BASF + Fondation Mohammed VI, 20% perf gain
+  Vision Business Consulting (Mar–Sep 2024): web + mobile apps for enterprise clients in manufacturing and healthcare sectors, 20% perf gain
   Networia (Jun–Aug 2023):             medical practice management system
   FSSM Marrakech (May–Jul 2022):       HR application, React + PHP
 

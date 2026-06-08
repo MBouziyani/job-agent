@@ -23,7 +23,7 @@ Location: Morocco — open to remote worldwide
 
 Experience:
   Networia (Feb–May 2025):              task management app, Spring Boot + React, JWT, Docker, SonarQube
-  Vision Business Consulting (Mar–Sep 2024): web + mobile apps for BASF + Fondation Mohammed VI, 20% perf gain
+  Vision Business Consulting (Mar–Sep 2024): web + mobile apps for enterprise clients in manufacturing and healthcare sectors, 20% perf gain
   Networia (Jun–Aug 2023):              medical practice management system
   FSSM Marrakech (May–Jul 2022):        HR application, React + PHP
 
@@ -41,76 +41,93 @@ _SYSTEM = (
     'Respond with valid JSON only — no markdown fences, no explanation, no extra text.'
 )
 
-# Per-category angle: hook_hint, relevance_hint, proof_hint
+# All three proof points presented to Claude — category picks which to prefer.
+_PROOFS = """\
+Three proof points — choose the single most relevant one for Line 3:
+  A. Networia medical system (Jun–Aug 2023): built a medical practice management system in \
+Spring Boot + React with JWT auth, production-deployed — healthcare domain, Java backend depth
+  B. Vision Business Consulting (Mar–Sep 2024): delivered web + mobile apps for enterprise clients \
+in manufacturing and healthcare sectors, 20% performance gain — enterprise scale, French-language context
+  C. Job Search Agent (2025): multi-agent AI pipeline using Claude API (Anthropic), Docker Compose \
+on DigitalOcean (4 GB VPS, Ubuntu 24.04), APScheduler, Flask — real LLM integration and \
+self-managed production infrastructure"""
+
+# Per-category angle: hook_style (how to write Line 1), relevance_hint (Line 2), proof_prefer (Line 3 guidance).
 _ANGLE: dict[str, dict[str, str]] = {
     'AI_COMPANY': {
-        'hook_hint': 'their AI product, ML pipeline, LLM integration, or specific model/framework they use',
+        'hook_style': (
+            'Open with a specific technical observation about this company\'s AI approach — '
+            'name their model choice, inference pattern, RAG architecture, fine-tuning strategy, '
+            'or an interesting design decision visible in their description. '
+            'Frame it as one developer recognising another\'s technical choice, not as praise. '
+            'Never open with "I noticed you use AI" or any generic admiration phrase.'
+        ),
         'relevance_hint': (
             'how building a production multi-agent Claude API system shows Mohammed understands LLM '
             'pipelines and agentic architecture — not just CRUD backends'
         ),
-        'proof_hint': (
-            'Job Search Agent: multi-agent pipeline using Claude API (Anthropic), SQLite, Flask, '
-            'APScheduler — deployed on DigitalOcean; real LLM integration shipped end-to-end'
-        ),
+        'proof_prefer': 'Prefer C (AI/LLM + production deployment). Fall back to A if their stack is more Java-adjacent.',
     },
     'DEVOPS_CLOUD': {
-        'hook_hint': 'their cloud infrastructure, deployment stack, or a specific DevOps tool or practice they use',
+        'hook_style': (
+            'Open with a specific infrastructure or scale observation — name a tool, '
+            'an orchestration approach, or a deployment pattern visible in their stack. '
+            'Frame as a practitioner recognising a specific decision, not general enthusiasm. '
+            'Go beyond just naming the tool — say something about what they\'re doing with it.'
+        ),
         'relevance_hint': (
             "how Mohammed's self-managed multi-container Docker deployment on a VPS reflects the "
             'same operational mindset their team uses'
         ),
-        'proof_hint': (
-            'deployed and maintains a multi-container Docker Compose system on DigitalOcean '
-            '(Ubuntu 24.04, APScheduler, Flask, SQLite) — self-managed, running in production'
-        ),
+        'proof_prefer': 'Prefer C (Docker Compose + self-managed VPS). Fall back to A if healthcare context is relevant.',
     },
     'FRENCH_STARTUP': {
-        'hook_hint': (
-            'their French market, European team structure, or francophone product — '
-            'reference something concrete, not just "your company"'
+        'hook_style': (
+            'Write the FIRST sentence only in French — make it specific to their product or team '
+            '(not a generic compliment — reference something concrete about them). '
+            'Then immediately continue in English for the rest of the email. '
+            'Example structure: "[One specific French sentence about their product/team]. [English continues...]"'
         ),
         'relevance_hint': (
             'French C1 proficiency, Morocco timezone UTC+1 (full overlap with European working hours), '
             'and direct enterprise project experience at Vision Business Consulting'
         ),
-        'proof_hint': (
-            'built web + mobile apps for BASF and Fondation Mohammed VI at Vision Business '
-            'Consulting — enterprise-scale delivery with a 20% performance improvement'
-        ),
+        'proof_prefer': 'Prefer B (enterprise clients + French-language context). Fall back to A if their focus is healthcare.',
     },
     'JAVA_SPRING': {
-        'hook_hint': 'their Java/Spring backend, microservices architecture, or a specific library or pattern they use',
+        'hook_style': (
+            'Open by naming a specific technical detail from their stack or description — '
+            'a Spring module, an architectural pattern (CQRS, event sourcing, hexagonal architecture), '
+            'or a library they use. Show you read their stack, not just their job title. '
+            'Be precise — "using Spring Security with OAuth2" beats "I see you use Spring Boot".'
+        ),
         'relevance_hint': (
             "how Mohammed's Spring Boot internship (JWT, SonarQube, Docker, PostgreSQL) maps "
             'directly to the depth their backend team needs'
         ),
-        'proof_hint': (
-            'Spring Boot internship at Networia: task management app with JWT auth, SonarQube '
-            'quality gate, Dockerised — production-deployed within a real engineering team'
-        ),
+        'proof_prefer': 'Prefer A (Networia medical, Spring Boot + JWT + SonarQube depth). Fall back to B if their context is enterprise/large-scale.',
     },
     'NODEJS_PYTHON': {
-        'hook_hint': (
-            'their Node.js or Python stack, a specific framework (Express, FastAPI, Django, NestJS), '
-            'or their API architecture'
+        'hook_style': (
+            'Open with a versatility angle — acknowledge their stack choice, then establish that '
+            'Mohammed moves fluidly across backend languages rather than needing to learn theirs from scratch. '
+            'Do NOT say "I\'m a fast learner" — show it through concrete cross-language work. '
+            'Reference the specific framework or language they use.'
         ),
         'relevance_hint': (
             'full-stack versatility — Python in production (multi-module automation pipeline), '
             'React/TypeScript on the frontend, willing to go deep on their stack quickly'
         ),
-        'proof_hint': (
-            'shipped a Python automation pipeline (multi-module, APScheduler, Flask dashboard) '
-            'and a Spring Boot + React e-commerce platform — production work across two backend languages'
-        ),
+        'proof_prefer': 'Prefer C (Python + Flask production pipeline). Fall back to A if they have a healthcare angle.',
     },
     'GENERAL_TECH': {
-        'hook_hint': (
-            'something specific about them (product feature, recent funding, open-source repo, '
-            'blog post, or stack choice) — be concrete, not generic'
+        'hook_style': (
+            'Open with something specific about this company — a product decision, recent development, '
+            'open-source project, or stack choice visible in the description. '
+            'Must be grounded in their info, not a generic opener.'
         ),
         'relevance_hint': "how Mohammed's Java/Spring Boot + React background maps to their specific stack or need",
-        'proof_hint': 'ONE concrete result from Mohammed\'s experience (pick whichever is most relevant to this company)',
+        'proof_prefer': 'Pick whichever of A, B, or C is most relevant to this company\'s stack, scale, and domain.',
     },
 }
 
@@ -176,10 +193,13 @@ Company info:
 Mohammed's profile:
 {_PROFILE}
 
+{_PROOFS}
+  Preference for this company: {angle['proof_prefer']}
+
 Email structure — follow EXACTLY in this order:
-  Line 1 — Hook: {angle['hook_hint']}. Be concrete, not generic.
+  Line 1 — Hook: {angle['hook_style']}
   Line 2 — Relevance: {angle['relevance_hint']}.
-  Line 3 — Proof: {angle['proof_hint']}.
+  Line 3 — Proof: Use the proof point selected above. State the outcome concretely in one sentence.
   Line 4 — Ask: "Would a 15-min call make sense?"
   Sign-off: {_SENDER} | {_SENDER_EMAIL} | {_SENDER_LINKEDIN}
 
