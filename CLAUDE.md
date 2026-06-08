@@ -481,14 +481,31 @@ Scheduling: APScheduler BlockingScheduler — runs immediately on startup, then 
 ```
 Subject: specific, references company or role
 
-Line 1 — hook: something specific about them (funding, product, stack, blog)
-Line 2 — relevance: "I build with Java/Spring Boot + React, matches your [X]"
-Line 3 — proof: ONE concrete thing from Mohammed's background
+Line 1 — hook: category-specific (see table below)
+Line 2 — relevance: category-specific angle
+Line 3 — proof: category-specific proof point
 Line 4 — ask: "Would a 15-min call make sense?"
 
 Max 150 words. No fluff. No "I am passionate about technology".
 Sign-off: Mohammed Bouziyani | mb.bouziyani@gmail.com | linkedin.com/in/mohammed-bouziyani
 ```
+
+### Company category classification (mailer.py + dashboard/app.py)
+
+Each company is classified before drafting. Classification uses description + stack keywords
+(and `.fr` domain suffix for FRENCH_STARTUP). Priority order: AI_COMPANY → DEVOPS_CLOUD →
+FRENCH_STARTUP → JAVA_SPRING → NODEJS_PYTHON → GENERAL_TECH.
+
+| Category | Detection keywords | Email angle |
+|---|---|---|
+| `AI_COMPANY` | machine learning, llm, langchain, openai, generative ai, neural network, nlp, embedding, vector database | Lead with Job Agent AI project + Claude API integration; proof = Job Search Agent deployed on DigitalOcean |
+| `DEVOPS_CLOUD` | kubernetes, terraform, ci/cd, platform engineering, sre, infrastructure as code, gitops, helm | Lead with multi-container Docker deployment, VPS self-management; proof = Docker Compose system in production |
+| `FRENCH_STARTUP` | france, french, paris, lyon, francophone + `.fr` domain | Lead with French C1, Morocco UTC+1 timezone, BASF enterprise experience; proof = Vision Business Consulting delivery |
+| `JAVA_SPRING` | spring boot, spring framework, hibernate, micronaut, quarkus, kotlin | Lead with Spring Boot internship depth; proof = Networia JWT + SonarQube + Docker |
+| `NODEJS_PYTHON` | node.js, nodejs, nestjs, django, fastapi, flask, python backend | Lead with full-stack versatility + Python in production; proof = job agent pipeline + e-commerce platform |
+| `GENERAL_TECH` | (fallback) | Balanced approach — hook on their product/stack, relevance on Java + React, best-fit proof |
+
+Both `agent/mailer.py` and `dashboard/app.py` contain the full classifier + angle dict (kept in sync manually due to two-container architecture).
 
 ## Mohammed's profile (for email generation)
 ```
@@ -502,7 +519,11 @@ Experience:
   Networia (Jun–Aug 2023):             medical practice management system
   FSSM Marrakech (May–Jul 2022):       HR application, React + PHP
 
-Project: e-commerce platform — Spring Boot + React + PostgreSQL + Docker
+Projects:
+  Job Search Agent: multi-agent pipeline with Claude API (Anthropic), APScheduler, SQLite, Flask dashboard,
+    Docker Compose — deployed on DigitalOcean (4 GB VPS, Ubuntu 24.04) — end-to-end system in production
+  E-commerce platform: Spring Boot + React + PostgreSQL + Docker
+
 Education: Computer Science & Information Systems Engineering, Université Privée de Marrakech (2024)
 Languages: Arabic (native), French (C1), English (B2)
 ```
@@ -525,6 +546,7 @@ Session 5: finder.py + Hunter.io integration                                  �
 Session 6: mailer.py + review.html + Gmail send + /approve /skip /run-mailer  ✓ done
 Session 7: followup.py + APScheduler (10:00 UTC) + /run-followup              ✓ done
 Session 8: Remote.co + Jobspresso + Wellfound scrapers added to scraper.py    ✓ done
+Session 8b: mailer.py — company category classifier + per-category email angles ✓ done
 Session 9: Hermes Agent container + Telegram bot
 ```
 
