@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import sqlite3
-import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -694,27 +693,22 @@ def _do_hunter_finder(conn, api_key: str) -> tuple[int, int, int]:
     return found, processed, skipped
 
 
+_HERMES_FINDER_URL = 'http://host.docker.internal:8765/find-emails'
+_HERMES_UNAVAILABLE = 'Hermes finder not available — trigger manually via Telegram'
+
+
 def _do_hermes_finder() -> tuple[str, str | None]:
-    """Run hermes agent for web-search contact discovery. Returns (output_snippet, error_or_None)."""
+    """Call the host-side Hermes HTTP endpoint. Returns (output_snippet, error_or_None)."""
     try:
-        result = subprocess.run(
-            ['hermes', '-z',
-             'Query /opt/job-agent/data/jobs.db for qualified companies with no contact, '
-             'find their CTO or recruiter email via web search, insert into contacts table, '
-             'then return results'],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        output = (result.stdout or result.stderr or '').strip()
-        snippet = output[:300] + ('…' if len(output) > 300 else '')
-        if result.returncode != 0:
-            return snippet, f'exit {result.returncode}'
+        resp = requests.post(_HERMES_FINDER_URL, timeout=180)
+        snippet = resp.text.strip()[:300]
+        if resp.status_code != 200:
+            return snippet, f'HTTP {resp.status_code}'
         return snippet, None
-    except subprocess.TimeoutExpired:
-        return '', 'timed out after 180s'
-    except FileNotFoundError:
-        return '', 'hermes not found — is it installed in this container?'
+    except requests.exceptions.ConnectionError:
+        return '', _HERMES_UNAVAILABLE
+    except requests.exceptions.Timeout:
+        return '', 'Hermes request timed out after 180s'
     except Exception as exc:
         return '', str(exc)
 
@@ -742,8 +736,9 @@ def run_finder():
 def run_hermes_finder():
     snippet, error = _do_hermes_finder()
     if error:
-        detail = f'{error}: {snippet}' if snippet else error
-        return redirect(url_for('pipeline', msg=f'Hermes error — {detail}'))
+        # Pass the unavailable message verbatim; prefix other errors with context.
+        msg = error if error == _HERMES_UNAVAILABLE else f'Hermes error — {error}: {snippet}'.rstrip(': ')
+        return redirect(url_for('pipeline', msg=msg))
     msg = f'Hermes done — {snippet}' if snippet else 'Hermes done'
     return redirect(url_for('pipeline', msg=msg))
 
@@ -767,10 +762,7 @@ def run_all():
 
     # Step 2 — Hermes web-search finder
     snippet, error = _do_hermes_finder()
-    if error:
-        parts.append(f'Hermes error ({error})')
-    else:
-        parts.append('Hermes done')
+    parts.append(error if error else (f'Hermes done — {snippet}' if snippet else 'Hermes done'))
 
     # Step 3 — Mailer draft generation
     if not os.environ.get('ANTHROPIC_API_KEY'):

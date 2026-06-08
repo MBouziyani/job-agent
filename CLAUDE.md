@@ -215,8 +215,10 @@ Tier 4: (any other / no position — last resort)
 - `/run-finder`, `/run-hermes-finder`, `/run-all` all run synchronously in the Flask request —
   acceptable for a personal tool with small batches; a background thread would add complexity
   with no benefit at this scale
-- `/run-hermes-finder`: calls `hermes -z '<task>'` via `subprocess.run`, timeout=180s, captures
-  stdout/stderr, shows first 300 chars in the pipeline banner; handles FileNotFoundError + timeout
+- `/run-hermes-finder`: POSTs to `http://host.docker.internal:8765/find-emails` (tiny Flask server
+  on the VPS host that runs hermes); timeout=180s, shows first 300 chars of response in the banner;
+  on `ConnectionError` returns "Hermes finder not available — trigger manually via Telegram" verbatim
+  (no "Hermes error —" prefix, so the banner reads cleanly); other errors prefixed with "Hermes error"
 - `/run-all`: runs Hunter finder → Hermes finder → Mailer in sequence via `_do_hunter_finder`,
   `_do_hermes_finder`, and `_run_mailer_for`; collects one-line results from each step and joins
   them with ` | ` in the redirect banner
