@@ -9,9 +9,15 @@
   <div class="banner banner-success">{{ msg }}</div>
 {% endif %}
 
-<div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+<div style="display:flex;justify-content:flex-end;gap:10px;margin-bottom:14px">
   <form method="post" action="/run-finder">
     <button type="submit" class="btn" style="margin-top:0">Run Finder</button>
+  </form>
+  <form method="post" action="/run-hermes-finder">
+    <button type="submit" class="btn" style="margin-top:0;background:var(--yellow);color:#000">Find with Hermes</button>
+  </form>
+  <form method="post" action="/run-all">
+    <button type="submit" class="btn" style="margin-top:0;background:var(--orange);color:#000">Run All</button>
   </form>
 </div>
 

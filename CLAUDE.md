@@ -212,8 +212,16 @@ Tier 4: (any other / no position — last resort)
 - Self-contained Hunter.io logic in `dashboard/app.py` (duplicates ~40 lines from finder.py)
   because dashboard and agent containers don't share a filesystem — importing agent code is
   impossible without a shared volume or HTTP API
-- `/run-finder` runs synchronously in the Flask request — acceptable for a personal tool with
-  small batches; a background thread would add complexity with no benefit at this scale
+- `/run-finder`, `/run-hermes-finder`, `/run-all` all run synchronously in the Flask request —
+  acceptable for a personal tool with small batches; a background thread would add complexity
+  with no benefit at this scale
+- `/run-hermes-finder`: calls `hermes -z '<task>'` via `subprocess.run`, timeout=180s, captures
+  stdout/stderr, shows first 300 chars in the pipeline banner; handles FileNotFoundError + timeout
+- `/run-all`: runs Hunter finder → Hermes finder → Mailer in sequence via `_do_hunter_finder`,
+  `_do_hermes_finder`, and `_run_mailer_for`; collects one-line results from each step and joins
+  them with ` | ` in the redirect banner
+- `_do_hunter_finder(conn, api_key)` and `_do_hermes_finder()` extracted as helpers so both the
+  individual routes and `/run-all` can call them without duplicating logic
 - `_best_contact` sorts by: (1) personal > generic type, (2) role tier, (3) confidence desc
   so the best personal email for the most senior role always wins
 
@@ -576,6 +584,7 @@ Session 6: mailer.py + review.html + Gmail send + /approve /skip /run-mailer  �
 Session 7: followup.py + APScheduler (10:00 UTC) + /run-followup              ✓ done
 Session 8: Remote.co + Jobspresso + Wellfound scrapers added to scraper.py    ✓ done
 Session 8b: mailer.py — company category classifier + per-category email angles ✓ done
+Session 8c: dashboard — /run-hermes-finder + /run-all + "Find with Hermes" button ✓ done
 Session 9: Hermes Agent container + Telegram bot
 ```
 

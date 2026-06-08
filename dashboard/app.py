@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sqlite3
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -648,6 +649,76 @@ def run_followup():
                             msg=f'Followup done — {drafted} drafts created ({skipped} skipped)'))
 
 
+# ── finder helpers ─────────────────────────────────────────────────────────────
+
+def _do_hunter_finder(conn, api_key: str) -> tuple[int, int, int]:
+    """Hunter.io lookup for all qualified companies without a contact. Returns (found, processed, skipped)."""
+    targets = conn.execute("""
+        SELECT * FROM companies
+        WHERE qualified = 1
+          AND domain IS NOT NULL
+          AND domain != ''
+          AND NOT EXISTS (
+              SELECT 1 FROM contacts WHERE contacts.company_id = companies.id
+          )
+        ORDER BY remote_score DESC
+    """).fetchall()
+
+    processed = found = skipped = 0
+
+    for company in targets:
+        emails = _hunter_search(company['domain'], api_key)
+        processed += 1
+
+        contact = _best_contact(emails, company['headcount'])
+        if not contact:
+            skipped += 1
+            time.sleep(1)
+            continue
+
+        first = (contact.get('first_name') or '').strip()
+        last  = (contact.get('last_name')  or '').strip()
+        name  = f'{first} {last}'.strip() or None
+        role  = contact.get('position') or None
+        email = contact['value']
+        verified = (contact.get('confidence') or 0) > 70
+
+        conn.execute(
+            "INSERT INTO contacts (company_id, name, role, email, source, verified) VALUES (?, ?, ?, ?, 'hunter', ?)",
+            (company['id'], name, role, email, 1 if verified else 0),
+        )
+        conn.commit()
+        found += 1
+        time.sleep(1)
+
+    return found, processed, skipped
+
+
+def _do_hermes_finder() -> tuple[str, str | None]:
+    """Run hermes agent for web-search contact discovery. Returns (output_snippet, error_or_None)."""
+    try:
+        result = subprocess.run(
+            ['hermes', '-z',
+             'Query /opt/job-agent/data/jobs.db for qualified companies with no contact, '
+             'find their CTO or recruiter email via web search, insert into contacts table, '
+             'then return results'],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        output = (result.stdout or result.stderr or '').strip()
+        snippet = output[:300] + ('…' if len(output) > 300 else '')
+        if result.returncode != 0:
+            return snippet, f'exit {result.returncode}'
+        return snippet, None
+    except subprocess.TimeoutExpired:
+        return '', 'timed out after 180s'
+    except FileNotFoundError:
+        return '', 'hermes not found — is it installed in this container?'
+    except Exception as exc:
+        return '', str(exc)
+
+
 # ── finder trigger ─────────────────────────────────────────────────────────────
 
 @app.route('/run-finder', methods=['POST'])
@@ -658,50 +729,76 @@ def run_finder():
 
     try:
         conn = _db()
-        targets = conn.execute("""
-            SELECT * FROM companies
-            WHERE qualified = 1
-              AND domain IS NOT NULL
-              AND domain != ''
-              AND NOT EXISTS (
-                  SELECT 1 FROM contacts WHERE contacts.company_id = companies.id
-              )
-            ORDER BY remote_score DESC
-        """).fetchall()
-
-        processed = found = skipped = 0
-
-        for company in targets:
-            emails = _hunter_search(company['domain'], api_key)
-            processed += 1
-
-            contact = _best_contact(emails, company['headcount'])
-            if not contact:
-                skipped += 1
-                time.sleep(1)
-                continue
-
-            first = (contact.get('first_name') or '').strip()
-            last  = (contact.get('last_name')  or '').strip()
-            name  = f'{first} {last}'.strip() or None
-            role  = contact.get('position') or None
-            email = contact['value']
-            verified = (contact.get('confidence') or 0) > 70
-
-            conn.execute(
-                "INSERT INTO contacts (company_id, name, role, email, source, verified) VALUES (?, ?, ?, ?, 'hunter', ?)",
-                (company['id'], name, role, email, 1 if verified else 0),
-            )
-            conn.commit()
-            found += 1
-            time.sleep(1)
-
+        found, processed, skipped = _do_hunter_finder(conn, api_key)
         conn.close()
     except Exception as exc:
         return redirect(url_for('pipeline', msg=f'Finder error: {exc}'))
 
     msg = f'Finder done — {found} contacts found ({processed} processed, {skipped} skipped)'
     return redirect(url_for('pipeline', msg=msg))
+
+
+@app.route('/run-hermes-finder', methods=['POST'])
+def run_hermes_finder():
+    snippet, error = _do_hermes_finder()
+    if error:
+        detail = f'{error}: {snippet}' if snippet else error
+        return redirect(url_for('pipeline', msg=f'Hermes error — {detail}'))
+    msg = f'Hermes done — {snippet}' if snippet else 'Hermes done'
+    return redirect(url_for('pipeline', msg=msg))
+
+
+@app.route('/run-all', methods=['POST'])
+def run_all():
+    parts = []
+
+    # Step 1 — Hunter.io finder
+    api_key = os.environ.get('HUNTER_API_KEY')
+    if api_key:
+        try:
+            conn = _db()
+            found, processed, _ = _do_hunter_finder(conn, api_key)
+            conn.close()
+            parts.append(f'Hunter: {found} contacts ({processed} processed)')
+        except Exception as exc:
+            parts.append(f'Hunter error: {exc}')
+    else:
+        parts.append('Hunter skipped (no key)')
+
+    # Step 2 — Hermes web-search finder
+    snippet, error = _do_hermes_finder()
+    if error:
+        parts.append(f'Hermes error ({error})')
+    else:
+        parts.append('Hermes done')
+
+    # Step 3 — Mailer draft generation
+    if not os.environ.get('ANTHROPIC_API_KEY'):
+        parts.append('Mailer skipped (no key)')
+    else:
+        try:
+            conn = _db()
+            try:
+                cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding='utf-8')) or {}
+            except Exception:
+                cfg = {}
+            max_drafts = cfg.get('outreach', {}).get('max_drafts_per_day', 3)
+            targets = conn.execute("""
+                SELECT c.*, ct.id AS contact_id, ct.name AS contact_name,
+                       ct.role AS contact_role, ct.email AS contact_email
+                FROM companies c
+                JOIN contacts ct ON ct.company_id = c.id
+                WHERE c.qualified = 1
+                  AND NOT EXISTS (SELECT 1 FROM emails WHERE emails.company_id = c.id)
+                ORDER BY c.remote_score DESC
+            """).fetchall()
+            drafted, skipped = _run_mailer_for(conn, targets, max_drafts)
+            conn.close()
+            parts.append(f'Mailer: {drafted} drafts ({skipped} skipped)')
+        except Exception as exc:
+            parts.append(f'Mailer error: {exc}')
+
+    return redirect(url_for('pipeline', msg=' | '.join(parts)))
 
 
 # ── companies ─────────────────────────────────────────────────────────────────
