@@ -34,36 +34,54 @@ def _db():
 
 # ── Hunter.io helpers ─────────────────────────────────────────────────────────
 
-_ROLE_TIERS = [
+_TIERS_SMALL = [
     ['cto', 'chief technology officer', 'chief technical officer'],
     ['co-founder', 'cofounder', 'co founder'],
-    [
-        'head of engineering', 'vp of engineering', 'vp engineering',
-        'director of engineering', 'engineering director',
-    ],
+    ['head of engineering', 'vp of engineering', 'vp engineering',
+     'director of engineering', 'engineering director'],
+]
+
+_TIERS_MID = [
     ['engineering manager', 'technical manager', 'tech manager'],
     ['tech lead', 'technical lead', 'lead engineer', 'lead developer', 'staff engineer'],
-    ['developer', 'software engineer', 'software developer'],
+    ['technical recruiter', 'tech recruiter'],
+    ['cto', 'chief technology officer', 'chief technical officer'],
+]
+
+_TIERS_LARGE = [
+    ['technical recruiter', 'tech recruiter'],
+    ['talent acquisition', 'talent partner', 'talent sourcer', 'talent specialist'],
+    ['people operations', 'people ops', 'hr manager', 'human resources'],
+    ['engineering manager', 'technical manager', 'tech manager'],
 ]
 
 
-def _tier(position: str) -> int:
+def _tiers_for(headcount: int | None) -> list:
+    if headcount is not None and headcount < 30:
+        return _TIERS_SMALL
+    if headcount is not None and headcount <= 80:
+        return _TIERS_MID
+    return _TIERS_LARGE
+
+
+def _tier(position: str, headcount: int | None) -> int:
+    tiers = _tiers_for(headcount)
     if not position:
-        return len(_ROLE_TIERS)
+        return len(tiers)
     p = position.lower()
-    for i, terms in enumerate(_ROLE_TIERS):
+    for i, terms in enumerate(tiers):
         if any(t in p for t in terms):
             return i
-    return len(_ROLE_TIERS)
+    return len(tiers)
 
 
-def _best_contact(emails: list) -> dict | None:
+def _best_contact(emails: list, headcount: int | None) -> dict | None:
     candidates = [e for e in emails if e.get('value')]
     if not candidates:
         return None
     candidates.sort(key=lambda e: (
         0 if e.get('type') == 'personal' else 1,
-        _tier(e.get('position', '')),
+        _tier(e.get('position', ''), headcount),
         -(e.get('confidence') or 0),
     ))
     return candidates[0]
@@ -638,7 +656,7 @@ def run_finder():
             emails = _hunter_search(company['domain'], api_key)
             processed += 1
 
-            contact = _best_contact(emails)
+            contact = _best_contact(emails, company['headcount'])
             if not contact:
                 skipped += 1
                 time.sleep(1)

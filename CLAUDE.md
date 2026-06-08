@@ -163,7 +163,7 @@ Note: `url` is a remoteok.com job page URL — DO NOT use for domain/dedup. Use 
 - `finder.run(conn, cfg)`: queries all `qualified=1` companies that have a `domain` and no row
   yet in `contacts`; for each calls Hunter.io domain-search (limit=10); picks best contact via
   `_best_contact()` and writes to `contacts` table
-- Role priority (CTO > Head/VP of Engineering > Engineering Manager > Tech Lead > any personal);
+- Role priority is headcount-aware (three tier lists — see table below);
   within same tier, prefers personal-type addresses over generic, then sorts by confidence desc
 - `verified = confidence > 70` — stored as `INTEGER 0/1` in `contacts.verified`
 - `HUNTER_API_KEY` checked at startup — logs error and returns early if missing
@@ -172,18 +172,37 @@ Note: `url` is a remoteok.com job page URL — DO NOT use for domain/dedup. Use 
   redirects to `/pipeline?msg=Finder done — N contacts found (M processed, K skipped)`
 - `Run Finder` button on pipeline page triggers the route; success banner shows on redirect
 
-### Role priority tiers (CTO first, Developer last)
+### Role priority tiers (headcount-aware)
+
+`_tiers_for(headcount)` selects the active list; `NULL` headcount → LARGE.
+Within same tier: personal-type email > generic; then confidence descending.
+`verified = confidence > 70` (strictly greater, not >=)
+
+**Small — headcount < 30** (reach the technical decision-maker directly)
 ```
 Tier 0: cto, chief technology officer, chief technical officer
 Tier 1: co-founder, cofounder, co founder
 Tier 2: head of engineering, vp of engineering, vp engineering, director of engineering
-Tier 3: engineering manager, technical manager, tech manager
-Tier 4: tech lead, technical lead, lead engineer, lead developer, staff engineer
-Tier 5: developer, software engineer, software developer
-Tier 6: (any other / no position — last resort)
+Tier 3: (any other / no position — last resort)
 ```
-Within same tier: personal-type email > generic; then confidence descending.
-`verified = confidence > 70` (strictly greater, not >=)
+
+**Mid — headcount 30–80** (hiring manager / lead is the right entry point; CTO is fallback)
+```
+Tier 0: engineering manager, technical manager, tech manager
+Tier 1: tech lead, technical lead, lead engineer, lead developer, staff engineer
+Tier 2: technical recruiter, tech recruiter
+Tier 3: cto, chief technology officer, chief technical officer
+Tier 4: (any other / no position — last resort)
+```
+
+**Large — headcount > 80 or NULL** (go through recruiting / people ops first)
+```
+Tier 0: technical recruiter, tech recruiter
+Tier 1: talent acquisition, talent partner, talent sourcer, talent specialist
+Tier 2: people operations, people ops, hr manager, human resources
+Tier 3: engineering manager, technical manager, tech manager
+Tier 4: (any other / no position — last resort)
+```
 
 ### DB helpers added in Session 5
 - `get_qualified_without_contact(conn)` — `qualified=1 AND domain IS NOT NULL AND id NOT IN contacts`
