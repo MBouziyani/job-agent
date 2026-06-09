@@ -907,6 +907,7 @@ def companies():
                 'SELECT * FROM companies ORDER BY created_at DESC'
             ).fetchall()
         # Estimate timezone for companies without one
+        rows = [dict(row) for row in rows]
         for row in rows:
             if not row.get('timezone') and row.get('domain'):
                 estimated = _estimate_timezone(row['domain'])
