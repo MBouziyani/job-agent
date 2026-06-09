@@ -8,6 +8,7 @@ from db import get_conn, init_db
 from finder import run as find_contacts
 from followup import run as send_followups
 from mailer import run as draft_emails
+from auto_sender import run as auto_send
 from qualifier import run as qualify
 from reply_monitor import run as check_replies
 from scraper import run_all
@@ -40,6 +41,9 @@ def run_pipeline() -> None:
 
         mailer_results = draft_emails(conn, cfg)
         logger.info('Mailer complete — %s', mailer_results)
+
+        send_results = auto_send(conn, cfg)
+        logger.info('Auto-send complete — %s', send_results)
 
         followup_results = send_followups(conn, cfg)
         logger.info('Followup complete — %s', followup_results)
