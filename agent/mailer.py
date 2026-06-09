@@ -22,112 +22,102 @@ Stack:    Java, Spring Boot, React/TypeScript, Node.js, Docker, PostgreSQL, REST
 Location: Morocco — open to remote worldwide
 
 Experience:
-  Networia (Feb–May 2025):              task management app, Spring Boot + React, JWT, Docker, SonarQube
-  Vision Business Consulting (Mar–Sep 2024): web + mobile apps for enterprise clients in manufacturing and healthcare sectors, 20% perf gain
-  Networia (Jun–Aug 2023):              medical practice management system
-  FSSM Marrakech (May–Jul 2022):        HR application, React + PHP
+  Networia (Feb-May 2025):              task management app, Spring Boot + React, JWT, Docker, SonarQube
+  Vision Business Consulting (Mar-Sep 2024): web + mobile apps for enterprise clients in manufacturing and healthcare sectors, 20% perf gain
+  Networia (Jun-Aug 2023):              medical practice management system
+  FSSM Marrakech (May-Jul 2022):        HR application, React + PHP
 
 Projects:
   Job Search Agent: multi-agent pipeline with Claude API (Anthropic), APScheduler, SQLite, Flask dashboard,
     Docker Compose — deployed on DigitalOcean (4 GB VPS, Ubuntu 24.04) — end-to-end system in production
   E-commerce platform: Spring Boot + React + PostgreSQL + Docker
 
-Education: Computer Science & Information Systems Engineering, Université Privée de Marrakech (2024)
+Education: Computer Science & Information Systems Engineering, Universite Privee de Marrakech (2024)
 Languages: Arabic (native), French (C1), English (B2)\
 """
 
 _SYSTEM = (
-    'You are writing a cold outreach email for Mohammed Bouziyani. '
+    'You are writing a cold, ultra-concise outreach email for Mohammed Bouziyani. '
+    'Every word must earn its place. Be direct, specific, and very short. '
     'Respond with valid JSON only — no markdown fences, no explanation, no extra text.'
 )
 
 # All three proof points presented to Claude — category picks which to prefer.
 _PROOFS = """\
 Three proof points — choose the single most relevant one for Line 3:
-  A. Networia medical system (Jun–Aug 2023): built a medical practice management system in \
+  A. Networia medical system (Jun-Aug 2023): built a medical practice management system in \
 Spring Boot + React with JWT auth, production-deployed — healthcare domain, Java backend depth
-  B. Vision Business Consulting (Mar–Sep 2024): delivered web + mobile apps for enterprise clients \
+  B. Vision Business Consulting (Mar-Sep 2024): delivered web + mobile apps for enterprise clients \
 in manufacturing and healthcare sectors, 20% performance gain — enterprise scale, French-language context
   C. Job Search Agent (2025): multi-agent AI pipeline using Claude API (Anthropic), Docker Compose \
 on DigitalOcean (4 GB VPS, Ubuntu 24.04), APScheduler, Flask — real LLM integration and \
 self-managed production infrastructure"""
 
-# Per-category angle: hook_style (how to write Line 1), relevance_hint (Line 2), proof_prefer (Line 3 guidance).
+# Per-category angle: hook_style (Line 1), relevance_hint (Line 2), proof_prefer (Line 3 guidance).
+# hook_style and relevance_hint must demand SHORT sentences.
 _ANGLE: dict[str, dict[str, str]] = {
     'AI_COMPANY': {
         'hook_style': (
-            'Open with a specific technical observation about this company\'s AI approach — '
-            'name their model choice, inference pattern, RAG architecture, fine-tuning strategy, '
-            'or an interesting design decision visible in their description. '
-            'Frame it as one developer recognising another\'s technical choice, not as praise. '
-            'Never open with "I noticed you use AI" or any generic admiration phrase.'
+            'ONE short sentence (max 15 words). Name a specific technical detail about '
+            'their AI approach — model choice, architecture decision, or pattern you recognise. '
+            'No setup, no fluff. Then immediately pivot to yourself.'
         ),
         'relevance_hint': (
-            'how building a production multi-agent Claude API system shows Mohammed understands LLM '
-            'pipelines and agentic architecture — not just CRUD backends'
+            'ONE short sentence (max 20 words) connecting Mohammed production AI pipeline to what they do.'
         ),
         'proof_prefer': 'Prefer C (AI/LLM + production deployment). Fall back to A if their stack is more Java-adjacent.',
     },
     'DEVOPS_CLOUD': {
         'hook_style': (
-            'Open with a specific infrastructure or scale observation — name a tool, '
-            'an orchestration approach, or a deployment pattern visible in their stack. '
-            'Frame as a practitioner recognising a specific decision, not general enthusiasm. '
-            'Go beyond just naming the tool — say something about what they\'re doing with it.'
+            'ONE short sentence (max 15 words). Name a specific tool or infra pattern '
+            'they use. Show you read their stack without rambling.'
         ),
         'relevance_hint': (
-            "how Mohammed's self-managed multi-container Docker deployment on a VPS reflects the "
-            'same operational mindset their team uses'
+            'ONE short sentence (max 20 words) connecting Mohammed Docker/VPS experience to their infra.'
         ),
         'proof_prefer': 'Prefer C (Docker Compose + self-managed VPS). Fall back to A if healthcare context is relevant.',
     },
     'FRENCH_STARTUP': {
         'hook_style': (
-            'Write the FIRST sentence only in French — make it specific to their product or team '
-            '(not a generic compliment — reference something concrete about them). '
-            'Then immediately continue in English for the rest of the email. '
-            'Example structure: "[One specific French sentence about their product/team]. [English continues...]"'
+            'ONE short sentence in French (max 15 words) referencing something specific '
+            'about their product or team. Then continue in English.'
         ),
         'relevance_hint': (
-            'French C1 proficiency, Morocco timezone UTC+1 (full overlap with European working hours), '
-            'and direct enterprise project experience at Vision Business Consulting'
+            'ONE short sentence (max 20 words) about French C1 + Morocco timezone overlap with Europe.'
         ),
         'proof_prefer': 'Prefer B (enterprise clients + French-language context). Fall back to A if their focus is healthcare.',
     },
     'JAVA_SPRING': {
         'hook_style': (
-            'Open by naming a specific technical detail from their stack or description — '
-            'a Spring module, an architectural pattern (CQRS, event sourcing, hexagonal architecture), '
-            'or a library they use. Show you read their stack, not just their job title. '
-            'Be precise — "using Spring Security with OAuth2" beats "I see you use Spring Boot".'
+            'ONE short sentence (max 15 words). Name a specific Spring module or '
+            'pattern they use — e.g. Spring Security with OAuth2, or hexagonal architecture. '
+            'Be precise and brief. Not "I see you use Spring Boot".'
         ),
         'relevance_hint': (
-            "how Mohammed's Spring Boot internship (JWT, SonarQube, Docker, PostgreSQL) maps "
-            'directly to the depth their backend team needs'
+            'ONE short sentence (max 20 words) connecting Mohammed Spring Boot experience to their backend needs.'
         ),
         'proof_prefer': 'Prefer A (Networia medical, Spring Boot + JWT + SonarQube depth). Fall back to B if their context is enterprise/large-scale.',
     },
     'NODEJS_PYTHON': {
         'hook_style': (
-            'Open with a versatility angle — acknowledge their stack choice, then establish that '
-            'Mohammed moves fluidly across backend languages rather than needing to learn theirs from scratch. '
-            'Do NOT say "I\'m a fast learner" — show it through concrete cross-language work. '
-            'Reference the specific framework or language they use.'
+            'ONE short sentence (max 15 words). Acknowledge their stack choice and '
+            'establish that Mohammed works in this space. Show cross-language experience using their framework. '
+            'No "fast learner" claims.'
         ),
         'relevance_hint': (
-            'full-stack versatility — Python in production (multi-module automation pipeline), '
-            'React/TypeScript on the frontend, willing to go deep on their stack quickly'
+            'ONE short sentence (max 20 words) about Python + TS + ability to go deep on their stack.'
         ),
         'proof_prefer': 'Prefer C (Python + Flask production pipeline). Fall back to A if they have a healthcare angle.',
     },
     'GENERAL_TECH': {
         'hook_style': (
-            'Open with something specific about this company — a product decision, recent development, '
-            'open-source project, or stack choice visible in the description. '
-            'Must be grounded in their info, not a generic opener.'
+            'ONE short sentence (max 15 words). Mention something specific about '
+            'their product, stack, or recent development. No generic admiration.'
         ),
-        'relevance_hint': "how Mohammed's Java/Spring Boot + React background maps to their specific stack or need",
-        'proof_prefer': 'Pick whichever of A, B, or C is most relevant to this company\'s stack, scale, and domain.',
+        'relevance_hint': (
+            'ONE short sentence (max 20 words) connecting Mohammed Java/Spring Boot + React background to their stack or need.'
+        ),
+        'proof_prefer': 'Pick whichever of A, B, or C is most relevant to this company stack, scale, and domain.',
     },
 }
 
@@ -190,24 +180,27 @@ Company info:
   Remote score: {company.get('remote_score', 0)}/10
   Category:    {category}
 
-Mohammed's profile:
+Mohammed profile:
 {_PROFILE}
 
 {_PROOFS}
   Preference for this company: {angle['proof_prefer']}
 
-Email structure — follow EXACTLY in this order:
+Email structure — follow EXACTLY in this order (each sentence on its own line):
   Line 1 — Hook: {angle['hook_style']}
   Line 2 — Relevance: {angle['relevance_hint']}.
-  Line 3 — Proof: Use the proof point selected above. State the outcome concretely in one sentence.
+  Line 3 — Proof: One concrete sentence using the selected proof point. State the outcome with no filler.
   Line 4 — Ask: "Would a 15-min call make sense?"
   Sign-off: {_SENDER} | {_SENDER_EMAIL} | {_SENDER_LINKEDIN}
 
 Hard rules:
-  - Body (excluding sign-off) must be ≤ 150 words
-  - No filler: "I am passionate about", "I hope this finds you well", "excited to", "I believe"
-  - Subject must reference {company['name']} specifically — no generic "Software Engineer Inquiry"
-  - Address {contact_name} by first name if it's a real person's name
+  - Body (subject + sign-off excluded) must be ≤ 80 words total
+  - Each line (1-3) must be ≤ 20 words each
+  - No filler: "I am passionate about", "I hope this finds you well", "excited to", "I believe", "I think"
+  - No rambling setup sentences. Get to the point in the FIRST sentence.
+  - The hook (Line 1) must name something specific about {company['name']} — not a generic "I saw your company"
+  - Subject must be short and reference {company['name']} specifically — no generic "Software Engineer Inquiry"
+  - Address {contact_name} by first name if it is a real person name
 
 Return exactly this JSON (no other text):
 {{"subject": "...", "body": "..."}}"""

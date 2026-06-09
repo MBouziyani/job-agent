@@ -329,7 +329,7 @@ def scrape_wellfound(conn, cfg: dict) -> int:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(user_agent='Mozilla/5.0')
-            page.goto(WELLFOUND_URL, wait_until='networkidle', timeout=60000)
+            page.goto(WELLFOUND_URL, wait_until='load', timeout=60000)
 
             # Scroll 3 times to load more listings
             for _ in range(3):

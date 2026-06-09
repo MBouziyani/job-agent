@@ -4,24 +4,109 @@ scraping:
     we_work_remotely: true
     remotive: true
     jobspresso: true
-    wellfound: false
+    wellfound: false  # blocked by Cloudflare in headless mode — re-enable if you find a proxy solution
 
 qualification:
-  min_score: 4
-  min_countries: 3
-  max_headcount: 150
+  min_score: 3
+  min_countries: 1
+  max_headcount: 5000
   stack_keywords:
+    # -------------- General backend / full-stack --------------
+    - python
+    - javascript
+    - typescript
+    - node.js
     - java
     - spring boot
+    - kotlin
+    - go
+    - rust
+    - c#
+    - dotnet
+    - ruby
+    - scala
+    - fastapi
+    - django
+    - flask
+    - express
+    - graphql
+    - rest api
+    # -------------- Frontend --------------
     - react
-    - typescript
+    - next.js
+    - vue
+    - angular
+    - svelte
+    - react native
+    # -------------- Cloud / DevOps / Platform --------------
     - docker
+    - kubernetes
+    - terraform
+    - ci/cd
+    - jenkins
+    - github actions
+    - aws
+    - gcp
+    - azure
+    - devops
+    - sre
+    - platform engineering
+    - cloud engineer
+    # -------------- AI / ML / Data --------------
+    - machine learning
+    - deep learning
+    - ai
+    - artificial intelligence
+    - llm
+    - large language model
+    - openai
+    - rag
+    - langchain
+    - pytorch
+    - tensorflow
+    - prompt engineering
+    - data engineering
+    - data science
+    - etl
+    - pipelines
+    - airflow
+    - spark
+    # -------------- Databases --------------
     - postgresql
+    - postgres
+    - mongodb
+    - redis
+    - elasticsearch
+    # -------------- Architecture --------------
+    - microservices
+    - distributed systems
+    - system design
+    - api
+    # -------------- Role titles --------------
+    - software engineer
+    - software developer
+    - full stack
+    - backend engineer
+    - frontend engineer
+    - data engineer
+    - ml engineer
+    - devops engineer
+    - platform engineer
+    - cloud engineer
   exclude_keywords:
     - "us only"
     - "must be in"
     - "on-site"
     - "hybrid"
+    - php
+    - laravel
+    - wordpress
+    - drupal
+    - magento
+    - cobol
+    - fortran
+    - mainframe
+    - joomla
 
 outreach:
   max_drafts_per_day: 3
