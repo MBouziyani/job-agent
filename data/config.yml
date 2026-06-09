@@ -5,6 +5,8 @@ scraping:
     remotive: true
     jobspresso: true
     wellfound: false  # blocked by Cloudflare in headless mode — re-enable if you find a proxy solution
+    stackoverflow: true
+    hackernews: true
 
 qualification:
   min_score: 3

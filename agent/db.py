@@ -29,6 +29,7 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 countries_count INTEGER,
                 stack           TEXT,
                 description     TEXT,
+                job_title       TEXT,
                 source          TEXT,
                 remote_score    REAL DEFAULT 0,
                 qualified       INTEGER DEFAULT NULL,
@@ -48,16 +49,18 @@ def init_db(db_path: Path = DB_PATH) -> None:
             );
 
             CREATE TABLE IF NOT EXISTS emails (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                company_id  INTEGER NOT NULL,
-                contact_id  INTEGER,
-                subject     TEXT,
-                body        TEXT,
-                status      TEXT DEFAULT 'draft'
-                            CHECK(status IN ('draft','approved','sent','replied','skipped')),
-                sent_at     TIMESTAMP,
-                opened_at   TIMESTAMP,
-                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id      INTEGER NOT NULL,
+                contact_id      INTEGER,
+                subject         TEXT,
+                body            TEXT,
+                status          TEXT DEFAULT 'draft'
+                                CHECK(status IN ('draft','approved','sent','replied','skipped','screening','interview','offer','rejected')),
+                sent_at         TIMESTAMP,
+                opened_at       TIMESTAMP,
+                pipeline_stage  TEXT DEFAULT 'sent',
+                sequence_step   INTEGER DEFAULT 1,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (company_id) REFERENCES companies(id),
                 FOREIGN KEY (contact_id) REFERENCES contacts(id)
             );
@@ -77,6 +80,42 @@ def init_db(db_path: Path = DB_PATH) -> None:
         conn.commit()
     except Exception:
         pass  # column already exists
+    # Migration: add job_title column to databases created before this update
+    try:
+        conn.execute('ALTER TABLE companies ADD COLUMN job_title TEXT')
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+    # Migration: add timezone column for smart timing
+    try:
+        conn.execute('ALTER TABLE companies ADD COLUMN timezone TEXT')
+        conn.commit()
+    except Exception:
+        pass
+    # Migration: add careers_url for direct applications
+    try:
+        conn.execute('ALTER TABLE companies ADD COLUMN careers_url TEXT')
+        conn.commit()
+    except Exception:
+        pass
+    # Migration: add applied column for direct applications tracking
+    try:
+        conn.execute('ALTER TABLE companies ADD COLUMN applied INTEGER DEFAULT 0')
+        conn.commit()
+    except Exception:
+        pass
+    # Migration: add pipeline_stage to emails (for DBs created before this update)
+    try:
+        conn.execute("ALTER TABLE emails ADD COLUMN pipeline_stage TEXT DEFAULT 'sent'")
+        conn.commit()
+    except Exception:
+        pass
+    # Migration: add sequence_step to emails
+    try:
+        conn.execute('ALTER TABLE emails ADD COLUMN sequence_step INTEGER DEFAULT 1')
+        conn.commit()
+    except Exception:
+        pass
     logger.info('Database initialised at %s', db_path)
     conn.close()
 
@@ -93,10 +132,10 @@ def insert_company(conn: sqlite3.Connection, data: dict) -> int:
         """
         INSERT INTO companies
             (name, domain, website, headcount, countries_count,
-             stack, description, source, remote_score)
+             stack, description, job_title, source, remote_score)
         VALUES
             (:name, :domain, :website, :headcount, :countries_count,
-             :stack, :description, :source, :remote_score)
+             :stack, :description, :job_title, :source, :remote_score)
         """,
         data,
     )
@@ -130,9 +169,6 @@ def update_company_qualification(
 
 
 def get_qualified_without_contact(conn: sqlite3.Connection) -> list[dict]:
-    # NOT EXISTS instead of NOT IN — NOT IN returns zero rows when the subquery
-    # contains any NULL (possible if company_id had no NOT NULL constraint on an
-    # older DB created before the schema was tightened).
     rows = conn.execute("""
         SELECT * FROM companies
         WHERE qualified = 1
@@ -187,19 +223,28 @@ def insert_email_draft(
     contact_id: int,
     subject: str,
     body: str,
+    sequence_step: int = 1,
 ) -> int:
     cursor = conn.execute(
         """
-        INSERT INTO emails (company_id, contact_id, subject, body, status)
-        VALUES (?, ?, ?, ?, 'draft')
+        INSERT INTO emails (company_id, contact_id, subject, body, status, sequence_step)
+        VALUES (?, ?, ?, ?, 'draft', ?)
         """,
-        (company_id, contact_id, subject, body),
+        (company_id, contact_id, subject, body, sequence_step),
     )
     conn.commit()
     return cursor.lastrowid
 
 
-def get_emails_needing_followup(conn: sqlite3.Connection, days: int = 7) -> list[dict]:
+def get_emails_needing_followup(
+    conn: sqlite3.Connection, days: int = 7, sequence_step: int = 2
+) -> list[dict]:
+    """Find sent emails needing follow-up.
+    Step 2 = first followup (after `days` days).
+    Step 3 = final followup (after `days`*2 days).
+    Skips companies that already have a followup at this step or higher.
+    """
+    max_days = days * 2 if sequence_step == 3 else 999
     rows = conn.execute("""
         SELECT
             e.*,
@@ -207,6 +252,7 @@ def get_emails_needing_followup(conn: sqlite3.Connection, days: int = 7) -> list
             c.domain      AS company_domain,
             c.description AS company_description,
             c.stack       AS company_stack,
+            c.job_title   AS company_job_title,
             ct.name       AS contact_name,
             ct.role       AS contact_role,
             ct.email      AS contact_email
@@ -214,12 +260,33 @@ def get_emails_needing_followup(conn: sqlite3.Connection, days: int = 7) -> list
         JOIN companies c  ON c.id  = e.company_id
         LEFT JOIN contacts ct ON ct.id = e.contact_id
         WHERE e.status = 'sent'
+          AND e.sequence_step = 1
           AND e.sent_at <= datetime('now', ?)
+          AND e.sent_at > datetime('now', ?)
           AND NOT EXISTS (
               SELECT 1 FROM emails e2
               WHERE e2.company_id = e.company_id
-                AND e2.id != e.id
+                AND e2.sequence_step >= ?
           )
         ORDER BY e.sent_at ASC
-    """, (f'-{days} days',)).fetchall()
+    """, (f'-{days} days', f'-{max_days} days', sequence_step)).fetchall()
     return [dict(row) for row in rows]
+
+
+def update_pipeline_stage(conn: sqlite3.Connection, email_id: int, stage: str) -> None:
+    conn.execute(
+        'UPDATE emails SET pipeline_stage = ?, status = ? WHERE id = ?',
+        (stage, stage, email_id),
+    )
+    conn.commit()
+
+
+def get_pipeline_stats(conn: sqlite3.Connection) -> dict[str, int]:
+    stages = ['draft', 'sent', 'replied', 'screening', 'interview', 'offer', 'rejected']
+    stats = {}
+    for stage in stages:
+        row = conn.execute(
+            'SELECT COUNT(*) FROM emails WHERE status = ?', (stage,)
+        ).fetchone()
+        stats[stage] = row[0] or 0
+    return stats

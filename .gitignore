@@ -9,3 +9,4 @@ __pycache__/
 .venv/
 venv/
 credentials.json
+*.db-wal\n*.db-shm\n__pycache__/\n*.pyc

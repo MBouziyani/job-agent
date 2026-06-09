@@ -96,6 +96,7 @@ def scrape_remoteok(conn, cfg: dict) -> int:
             'countries_count': None,
             'stack': stack,
             'description': description,
+            'job_title': job.get('position', ''),
             'source': 'remoteok',
             'remote_score': 0,
         }
@@ -145,6 +146,13 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
         if not name:
             continue
 
+        # Extract job title from before ' at '
+        before_at = title.rsplit(' at ', 1)[0].strip()
+        if ': ' in before_at:
+            job_title = before_at.split(': ', 1)[-1].strip()
+        else:
+            job_title = before_at
+
         if name in seen:
             continue
         seen.add(name)
@@ -167,6 +175,7 @@ def scrape_weworkremotely(conn, cfg: dict) -> int:
             'countries_count': None,
             'stack': '',
             'description': description,
+            'job_title': job_title,
             'source': 'weworkremotely',
             'remote_score': 0,
         }
@@ -228,6 +237,7 @@ def scrape_remotive(conn, cfg: dict) -> int:
             'countries_count': None,
             'stack': stack,
             'description': description,
+            'job_title': job.get('title', ''),
             'source': 'remotive',
             'remote_score': 0,
         }
@@ -286,8 +296,17 @@ def scrape_jobspresso(conn, cfg: dict) -> int:
         link_el = listing.select_one('a')
         website = link_el['href'] if link_el and link_el.get('href') else ''
 
-        desc_el = listing.select_one('h3') or listing.select_one('.position')
-        description = desc_el.get_text(strip=True) if desc_el else ''
+        title_el = listing.select_one('h3') or listing.select_one('.position')
+        job_title = title_el.get_text(strip=True) if title_el else ''
+
+        # Try to find a proper job description (not just the title)
+        desc_el = (
+            listing.select_one('.job_listing-description')
+            or listing.select_one('.listing-description')
+            or listing.select_one('.description p')
+            or listing.select_one('p.description')
+        )
+        description = _strip_html(desc_el.get_text(strip=True))[:500] if desc_el else job_title
 
         company_data = {
             'name': name,
@@ -297,6 +316,7 @@ def scrape_jobspresso(conn, cfg: dict) -> int:
             'countries_count': None,
             'stack': '',
             'description': description,
+            'job_title': job_title,
             'source': 'jobspresso',
             'remote_score': 0,
         }
@@ -375,6 +395,7 @@ def scrape_wellfound(conn, cfg: dict) -> int:
             'countries_count': None,
             'stack': '',
             'description': '',
+            'job_title': '',
             'source': 'wellfound',
             'remote_score': 0,
         }
@@ -391,6 +412,243 @@ def scrape_wellfound(conn, cfg: dict) -> int:
             logger.error('Insert failed for %s: %s', name, exc)
 
     logger.info('Wellfound: added %d new companies', new_count)
+    return new_count
+
+
+SO_JOBS_FEED = 'https://stackoverflow.com/jobs/feed'
+
+
+def scrape_stackoverflow(conn, cfg: dict) -> int:
+    logger.info('Scraping Stack Overflow Jobs RSS...')
+    try:
+        resp = requests.get(
+            SO_JOBS_FEED,
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error('Stack Overflow request failed: %s', exc)
+        return 0
+
+    soup = BeautifulSoup(resp.content, 'xml')
+    items = soup.find_all('item')
+    logger.info('Stack Overflow raw records: %d', len(items))
+
+    seen: set[str] = set()
+    new_count = 0
+
+    for item in items:
+        # Title format: "Job Title at Company Name"
+        title_el = item.find('title')
+        title = title_el.get_text(strip=True) if title_el else ''
+        if ' at ' not in title:
+            continue
+        name = _fix_encoding(title.rsplit(' at ', 1)[-1].strip())
+        if not name:
+            continue
+
+        job_title = title.rsplit(' at ', 1)[0].strip()
+
+        # Some SO titles have the company in a <company> element; prefer that if available
+        company_el = item.find('company')
+        if company_el:
+            parsed_name = company_el.get_text(strip=True)
+            if parsed_name:
+                name = _fix_encoding(parsed_name)
+
+        if name in seen:
+            continue
+        seen.add(name)
+
+        if company_exists(conn, name, 'stackoverflow'):
+            continue
+
+        link_el = item.find('link')
+        website = link_el.get_text(strip=True) if link_el else ''
+
+        desc_el = item.find('description')
+        raw_desc = desc_el.get_text(strip=True) if desc_el else ''
+        description = _strip_html(raw_desc)[:500] if raw_desc else ''
+
+        company_data = {
+            'name': name,
+            'domain': None,
+            'website': website,
+            'headcount': None,
+            'countries_count': None,
+            'stack': '',
+            'description': description,
+            'job_title': job_title,
+            'source': 'stackoverflow',
+            'remote_score': 0,
+        }
+
+        try:
+            row_id = insert_company(conn, company_data)
+            new_count += 1
+            domain = _clearbit_domain(name)
+            if domain:
+                update_company_domain(conn, row_id, domain)
+            logger.debug('Added %s%s', name, f' → {domain}' if domain else '')
+            time.sleep(0.2)
+        except Exception as exc:
+            logger.error('Insert failed for %s: %s', name, exc)
+
+    logger.info('Stack Overflow Jobs: added %d new companies', new_count)
+    return new_count
+
+
+HN_ALGOLIA_API = 'https://hn.algolia.com/api/v1'
+
+
+def scrape_hackernews(conn, cfg: dict) -> int:
+    logger.info('Scraping HN Who Is Hiring...')
+    try:
+        # Search for the most recent "Who Is Hiring" story
+        resp = requests.get(
+            f'{HN_ALGOLIA_API}/search',
+            params={
+                'query': 'Who Is Hiring',
+                'tags': 'story',
+                'hitsPerPage': 1,
+            },
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        logger.error('HN Algolia search request failed: %s', exc)
+        return 0
+
+    hits = data.get('hits', [])
+    if not hits:
+        logger.warning('HN Algolia: no "Who Is Hiring" stories found')
+        return 0
+
+    story = hits[0]
+    story_id = story.get('objectID') or story.get('story_id')
+    logger.info('HN Who Is Hiring story ID: %s — "%s"', story_id, story.get('title', ''))
+
+    if not story_id:
+        logger.warning('HN Algolia: no story ID found')
+        return 0
+
+    # Fetch comments for this story
+    try:
+        resp = requests.get(
+            f'{HN_ALGOLIA_API}/items/{story_id}',
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        story_data = resp.json()
+    except Exception as exc:
+        logger.error('HN Algolia item request failed: %s', exc)
+        return 0
+
+    children = story_data.get('children', [])
+    logger.info('HN Who Is Hiring: %d comments to scan', len(children))
+
+    seen: set[str] = set()
+    new_count = 0
+
+    for comment in children:
+        text = (comment.get('text') or '').strip()
+        if not text:
+            continue
+
+        # The first line/sentence typically has the company name
+        # Common formats:
+        #   "Company Name | Job Title | Location | ..."
+        #   "Company Name (City) | ..."
+        #   "Company Name is hiring..."
+        #   "Company Name — Job Title — ..."
+        first_line = text.split('\n')[0].strip()
+
+        # Strip common prefixes like "| " or leading bullet
+        first_line = first_line.lstrip('|').lstrip('-').lstrip('*').strip()
+
+        # Try to extract company name: take everything before first pipe, em dash, or "is hiring"
+        # Format 1: "Company | Title | Location"
+        if ' | ' in first_line:
+            possible_name = first_line.split(' | ')[0].strip()
+        elif ' — ' in first_line:
+            possible_name = first_line.split(' — ')[0].strip()
+        elif ' – ' in first_line:
+            possible_name = first_line.split(' – ')[0].strip()
+        elif ' is hiring' in first_line.lower():
+            possible_name = first_line.split(' is hiring')[0].strip()
+        elif ' is looking' in first_line.lower():
+            possible_name = first_line.split(' is looking')[0].strip()
+        elif ' has an opening' in first_line.lower():
+            possible_name = first_line.split(' has an opening')[0].strip()
+        else:
+            # Fallback: take everything before first sentence period, or first ~50 chars
+            possible_name = first_line.split('. ')[0].strip() if '. ' in first_line else first_line[:50].strip()
+
+        # Clean up: remove parenthetical locations, trailing punctuation
+        possible_name = possible_name.rstrip(',;:.')
+        # Remove parenthetical like "(Remote)" or "(US only)"
+        possible_name = possible_name.split(' (')[0].strip()
+
+        # Filter: company names should be at least 2 chars, not contain HTML tags
+        if len(possible_name) < 2 or '<' in possible_name:
+            continue
+
+        name = _fix_encoding(possible_name)
+
+        if name in seen:
+            continue
+        seen.add(name)
+
+        if company_exists(conn, name, 'hackernews'):
+            continue
+
+        # Try to extract job title from the first line as well
+        job_title = ''
+        if ' | ' in first_line:
+            parts = first_line.split(' | ')
+            if len(parts) >= 2:
+                job_title = parts[1].strip()
+        elif ' — ' in first_line:
+            parts = first_line.split(' — ')
+            if len(parts) >= 2:
+                job_title = parts[1].strip()
+        elif ' – ' in first_line:
+            parts = first_line.split(' – ')
+            if len(parts) >= 2:
+                job_title = parts[1].strip()
+
+        # Description: the full comment text (stripped of HTML)
+        description = _strip_html(text)[:500]
+
+        company_data = {
+            'name': name,
+            'domain': None,
+            'website': '',
+            'headcount': None,
+            'countries_count': None,
+            'stack': '',
+            'description': description,
+            'job_title': job_title,
+            'source': 'hackernews',
+            'remote_score': 0,
+        }
+
+        try:
+            row_id = insert_company(conn, company_data)
+            new_count += 1
+            domain = _clearbit_domain(name)
+            if domain:
+                update_company_domain(conn, row_id, domain)
+            logger.debug('Added %s%s', name, f' → {domain}' if domain else '')
+            time.sleep(0.2)
+        except Exception as exc:
+            logger.error('Insert failed for %s: %s', name, exc)
+
+    logger.info('HN Who Is Hiring: added %d new companies', new_count)
     return new_count
 
 
@@ -412,5 +670,11 @@ def run_all(conn, cfg: dict) -> dict[str, int]:
 
     if sources.get('wellfound', False):
         results['wellfound'] = scrape_wellfound(conn, cfg)
+
+    if sources.get('stackoverflow', True):
+        results['stackoverflow'] = scrape_stackoverflow(conn, cfg)
+
+    if sources.get('hackernews', True):
+        results['hackernews'] = scrape_hackernews(conn, cfg)
 
     return results

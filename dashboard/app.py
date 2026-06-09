@@ -396,6 +396,43 @@ def _send_via_gmail(to_address: str, subject: str, body: str) -> None:
     service.users().messages().send(userId='me', body={'raw': raw}).execute()
 
 
+# ── smart timing helper ───────────────────────────────────────────────────────
+
+_TZ_MAP: dict[str, str] = {
+    '.fr':     'Europe/Paris',
+    '.ca':     'America/Toronto',
+    '.co.uk':  'Europe/London',
+    '.de':     'Europe/Berlin',
+    '.jp':     'Asia/Tokyo',
+    '.au':     'Australia/Sydney',
+    '.in':     'Asia/Kolkata',
+    '.ch':     'Europe/Zurich',
+    '.nl':     'Europe/Amsterdam',
+    '.se':     'Europe/Stockholm',
+    '.no':     'Europe/Oslo',
+    '.dk':     'Europe/Copenhagen',
+    '.fi':     'Europe/Helsinki',
+    '.ie':     'Europe/Dublin',
+    '.be':     'Europe/Brussels',
+    '.at':     'Europe/Vienna',
+    '.es':     'Europe/Madrid',
+    '.it':     'Europe/Rome',
+    '.pt':     'Europe/Lisbon',
+    '.pl':     'Europe/Warsaw',
+}
+
+
+def _estimate_timezone(domain: str | None) -> str | None:
+    """Guess timezone from domain TLD — returns IANA timezone name or None."""
+    if not domain:
+        return None
+    domain = domain.lower().strip()
+    for suffix, tz in _TZ_MAP.items():
+        if domain.endswith(suffix):
+            return tz
+    return None
+
+
 # ── pipeline ──────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -408,10 +445,13 @@ def pipeline():
     msg = request.args.get('msg')
     try:
         conn = _db()
+
+        # 1. Discovered — companies where qualified is NULL
         discovered = conn.execute(
             'SELECT * FROM companies WHERE qualified IS NULL ORDER BY created_at DESC'
         ).fetchall()
 
+        # 2. Qualified — qualified=1, no contact yet
         qualified = conn.execute("""
             SELECT * FROM companies
             WHERE qualified = 1
@@ -419,7 +459,8 @@ def pipeline():
             ORDER BY remote_score DESC
         """).fetchall()
 
-        email_found = conn.execute("""
+        # 3. Contacts Found — qualified + has contact, no email yet
+        contacts_found = conn.execute("""
             SELECT c.*, ct.email, ct.name AS contact_name, ct.role
             FROM companies c
             JOIN contacts ct ON ct.company_id = c.id
@@ -427,37 +468,86 @@ def pipeline():
               AND NOT EXISTS (
                   SELECT 1 FROM emails
                   WHERE emails.company_id = c.id
-                    AND emails.status IN ('sent','replied')
               )
             GROUP BY c.id
             ORDER BY c.remote_score DESC
         """).fetchall()
 
-        contacted = conn.execute("""
-            SELECT c.*, e.status, e.sent_at
-            FROM companies c
-            JOIN emails e ON e.company_id = c.id
-            WHERE e.status IN ('sent','replied')
-            GROUP BY c.id
+        # 4. Draft — emails with status='draft'
+        draft_emails = conn.execute("""
+            SELECT e.*, c.name AS company_name, c.domain AS company_domain,
+                   ct.name AS contact_name, ct.email AS contact_email
+            FROM emails e
+            JOIN companies c ON c.id = e.company_id
+            LEFT JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.status = 'draft'
+            ORDER BY e.created_at DESC
+        """).fetchall()
+
+        # 5. Sent — emails with status='sent'
+        sent_emails = conn.execute("""
+            SELECT e.id, e.sent_at, e.pipeline_stage, c.name AS company_name,
+                   c.domain AS company_domain, ct.name AS contact_name,
+                   ct.email AS contact_email
+            FROM emails e
+            JOIN companies c ON c.id = e.company_id
+            LEFT JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.status = 'sent'
             ORDER BY e.sent_at DESC
         """).fetchall()
 
-        all_scraped = conn.execute(
-            'SELECT * FROM companies ORDER BY created_at DESC'
-        ).fetchall()
+        # 6. Replied — emails with status='replied'
+        replied_emails = conn.execute("""
+            SELECT e.id, e.sent_at, e.pipeline_stage, c.name AS company_name,
+                   c.domain AS company_domain, ct.name AS contact_name,
+                   ct.email AS contact_email
+            FROM emails e
+            JOIN companies c ON c.id = e.company_id
+            LEFT JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.status = 'replied'
+            ORDER BY e.sent_at DESC
+        """).fetchall()
+
+        # 7. Screening/Interview
+        screening_emails = conn.execute("""
+            SELECT e.id, e.sent_at, e.status AS email_status, e.pipeline_stage,
+                   c.name AS company_name, c.domain AS company_domain,
+                   ct.name AS contact_name, ct.email AS contact_email
+            FROM emails e
+            JOIN companies c ON c.id = e.company_id
+            LEFT JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.status IN ('screening', 'interview')
+            ORDER BY e.sent_at DESC
+        """).fetchall()
+
+        # 8. Offer/Rejected
+        terminal_emails = conn.execute("""
+            SELECT e.id, e.sent_at, e.status AS email_status, e.pipeline_stage,
+                   c.name AS company_name, c.domain AS company_domain,
+                   ct.name AS contact_name, ct.email AS contact_email
+            FROM emails e
+            JOIN companies c ON c.id = e.company_id
+            LEFT JOIN contacts ct ON ct.id = e.contact_id
+            WHERE e.status IN ('offer', 'rejected')
+            ORDER BY e.sent_at DESC
+        """).fetchall()
 
         conn.close()
     except Exception as exc:
         return render_template('pipeline.html', error=str(exc), msg=None,
-                               discovered=[], qualified=[],
-                               email_found=[], contacted=[], all_scraped=[])
+                               discovered=[], qualified=[], contacts_found=[],
+                               draft_emails=[], sent_emails=[], replied_emails=[],
+                               screening_emails=[], terminal_emails=[])
 
     return render_template('pipeline.html',
                            discovered=discovered,
                            qualified=qualified,
-                           email_found=email_found,
-                           contacted=contacted,
-                           all_scraped=all_scraped,
+                           contacts_found=contacts_found,
+                           draft_emails=draft_emails,
+                           sent_emails=sent_emails,
+                           replied_emails=replied_emails,
+                           screening_emails=screening_emails,
+                           terminal_emails=terminal_emails,
                            msg=msg,
                            error=None)
 
@@ -816,6 +906,19 @@ def companies():
             rows = conn.execute(
                 'SELECT * FROM companies ORDER BY created_at DESC'
             ).fetchall()
+        # Estimate timezone for companies without one
+        for row in rows:
+            if not row.get('timezone') and row.get('domain'):
+                estimated = _estimate_timezone(row['domain'])
+                if estimated:
+                    try:
+                        conn.execute(
+                            'UPDATE companies SET timezone = ? WHERE id = ? AND timezone IS NULL',
+                            (estimated, row['id']),
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
         conn.close()
     except Exception as exc:
         return render_template('companies.html', error=str(exc), rows=[], f=f)
@@ -863,6 +966,79 @@ def settings():
                            error=error)
 
 
+# ── pipeline stage advancement ────────────────────────────────────────────────
+
+_STAGE_TRANSITIONS: dict[str, list[str]] = {
+    'sent':      ['replied'],
+    'replied':   ['screening', 'rejected'],
+    'screening': ['interview', 'rejected'],
+    'interview': ['offer', 'rejected'],
+}
+
+
+@app.route('/advance/<int:email_id>', methods=['POST'])
+def advance_stage(email_id):
+    stage = request.args.get('stage', '')
+    if stage not in ['replied', 'screening', 'interview', 'offer', 'rejected']:
+        return redirect(url_for('pipeline', msg='Invalid stage'))
+
+    try:
+        conn = _db()
+        row = conn.execute(
+            'SELECT status, pipeline_stage FROM emails WHERE id = ?', (email_id,)
+        ).fetchone()
+
+        if not row:
+            conn.close()
+            return redirect(url_for('pipeline', msg='Email not found'))
+
+        current = row['status']
+        allowed = _STAGE_TRANSITIONS.get(current, [])
+        if stage not in allowed:
+            conn.close()
+            return redirect(url_for('pipeline',
+                                    msg=f'Cannot go from "{current}" to "{stage}"'))
+
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute(
+            'UPDATE emails SET status = ?, pipeline_stage = ?, sent_at = ? WHERE id = ?',
+            (stage, stage, now, email_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        return redirect(url_for('pipeline', msg=f'Advance error: {exc}'))
+
+    return redirect(url_for('pipeline', msg=f'Marked as {stage}'))
+
+
+# ── direct applications ───────────────────────────────────────────────────────
+
+@app.route('/mark-applied/<int:company_id>', methods=['POST'])
+def mark_applied(company_id):
+    try:
+        conn = _db()
+        conn.execute('UPDATE companies SET applied = 1 WHERE id = ?', (company_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return redirect(request.referrer or url_for('companies'))
+
+
+@app.route('/set-timezone/<int:company_id>', methods=['POST'])
+def set_timezone(company_id):
+    tz = request.form.get('timezone', '').strip() or None
+    try:
+        conn = _db()
+        conn.execute('UPDATE companies SET timezone = ? WHERE id = ?', (tz, company_id))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return redirect(request.referrer or url_for('companies'))
+
+
 # ── stats ─────────────────────────────────────────────────────────────────────
 
 @app.route('/stats')
@@ -892,6 +1068,25 @@ def stats():
             'avg_score':      round(avg_score, 1) if avg_score is not None else 0,
         }
 
+        # Pipeline stage stats
+        ps = {
+            'draft':      scalar("SELECT COUNT(*) FROM emails WHERE status = 'draft'"),
+            'sent':       scalar("SELECT COUNT(*) FROM emails WHERE status = 'sent'"),
+            'replied':    scalar("SELECT COUNT(*) FROM emails WHERE status = 'replied'"),
+            'screening':  scalar("SELECT COUNT(*) FROM emails WHERE status = 'screening'"),
+            'interview':  scalar("SELECT COUNT(*) FROM emails WHERE status = 'interview'"),
+            'offer':      scalar("SELECT COUNT(*) FROM emails WHERE status = 'offer'"),
+            'rejected_email': scalar("SELECT COUNT(*) FROM emails WHERE status = 'rejected'"),
+        }
+
+        # Conversion rates
+        sent_total = ps['sent'] + ps['replied'] + ps['screening'] + ps['interview'] + ps['offer'] + ps['rejected_email']
+        cr = {}
+        cr['reply_rate']    = round(ps['replied'] / sent_total * 100, 1) if sent_total > 0 else 0
+        cr['screening_rate'] = round(ps['screening'] / ps['replied'] * 100, 1) if ps['replied'] > 0 else 0
+        cr['interview_rate'] = round(ps['interview'] / ps['screening'] * 100, 1) if ps['screening'] > 0 else 0
+        cr['offer_rate']     = round(ps['offer'] / ps['interview'] * 100, 1) if ps['interview'] > 0 else 0
+
         by_source = conn.execute(
             'SELECT source, COUNT(*) n FROM companies GROUP BY source ORDER BY n DESC'
         ).fetchall()
@@ -907,12 +1102,15 @@ def stats():
         conn.close()
     except Exception as exc:
         return render_template('stats.html', error=str(exc),
-                               totals={}, by_source=[], top=[])
+                               totals={}, by_source=[], top=[],
+                               pipeline_stats={}, conversion_rates={})
 
     return render_template('stats.html',
                            totals=totals,
                            by_source=by_source,
                            top=top,
+                           pipeline_stats=ps,
+                           conversion_rates=cr,
                            error=None)
 
 

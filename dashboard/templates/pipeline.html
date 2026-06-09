@@ -21,39 +21,9 @@
   </form>
 </div>
 
-<div class="kanban kanban-5">
+<div class="kanban kanban-8">
 
-  <!-- ── All Scraped ── -->
-  <div class="col">
-    <div class="col-head c-all">
-      All Scraped
-      <span class="col-count">{{ all_scraped|length }}</span>
-    </div>
-    <div class="cards">
-      {% for c in all_scraped %}
-      <div class="card">
-        <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
-        <div class="card-meta">
-          {% if c.domain %}
-            <span class="badge bd">{{ c.domain }}</span>
-          {% endif %}
-          <span class="badge bm">{{ c.source }}</span>
-          {% if c.qualified is not none %}
-            {% if c.qualified == 1 %}
-              <span class="badge bg">score {{ c.remote_score | int }}</span>
-            {% else %}
-              <span class="badge br">score {{ c.remote_score | int }}</span>
-            {% endif %}
-          {% endif %}
-        </div>
-      </div>
-      {% else %}
-      <div class="card-empty">No companies yet</div>
-      {% endfor %}
-    </div>
-  </div>
-
-  <!-- ── Discovered ── -->
+  <!-- ── 1. Discovered ── -->
   <div class="col">
     <div class="col-head c-discovered">
       Discovered
@@ -64,9 +34,7 @@
       <div class="card">
         <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
         <div class="card-meta">
-          {% if c.domain %}
-            <span class="badge bd">{{ c.domain }}</span>
-          {% endif %}
+          {% if c.domain %}<span class="badge bd">{{ c.domain }}</span>{% endif %}
           <span class="badge bm">{{ c.source }}</span>
         </div>
       </div>
@@ -76,7 +44,7 @@
     </div>
   </div>
 
-  <!-- ── Qualified ── -->
+  <!-- ── 2. Qualified ── -->
   <div class="col">
     <div class="col-head c-qualified">
       Qualified
@@ -87,9 +55,7 @@
       <div class="card">
         <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
         <div class="card-meta">
-          {% if c.domain %}
-            <span class="badge bd">{{ c.domain }}</span>
-          {% endif %}
+          {% if c.domain %}<span class="badge bd">{{ c.domain }}</span>{% endif %}
           <span class="badge bg">score {{ c.remote_score | int }}</span>
           <span class="badge bm">{{ c.source }}</span>
         </div>
@@ -100,53 +66,167 @@
     </div>
   </div>
 
-  <!-- ── Email Found ── -->
+  <!-- ── 3. Contacts Found ── -->
   <div class="col">
     <div class="col-head c-email">
-      Email Found
-      <span class="col-count">{{ email_found|length }}</span>
+      Contacts Found
+      <span class="col-count">{{ contacts_found|length }}</span>
     </div>
     <div class="cards">
-      {% for c in email_found %}
+      {% for c in contacts_found %}
       <div class="card">
         <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
         <div class="card-meta">
           <span class="badge by">{{ c.email }}</span>
-          {% if c.contact_name %}
-            <span class="badge bm">{{ c.contact_name }}</span>
-          {% endif %}
+          {% if c.contact_name %}<span class="badge bm">{{ c.contact_name }}</span>{% endif %}
           <span class="badge bg">score {{ c.remote_score | int }}</span>
         </div>
       </div>
       {% else %}
-      <div class="card-empty">Session 4 builds this</div>
+      <div class="card-empty">None yet</div>
       {% endfor %}
     </div>
   </div>
 
-  <!-- ── Contacted ── -->
+  <!-- ── 4. Draft ── -->
   <div class="col">
-    <div class="col-head c-contacted">
-      Contacted
-      <span class="col-count">{{ contacted|length }}</span>
+    <div class="col-head" style="color:var(--orange);">
+      Draft
+      <span class="col-count">{{ draft_emails|length }}</span>
     </div>
     <div class="cards">
-      {% for c in contacted %}
+      {% for e in draft_emails %}
       <div class="card">
-        <div class="card-name" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="card-name" title="{{ e.company_name }}">{{ e.company_name }}</div>
         <div class="card-meta">
-          {% if c.status == 'replied' %}
-            <span class="badge bg">replied</span>
+          {% if e.contact_email %}<span class="badge by">{{ e.contact_email }}</span>{% endif %}
+          <span class="badge bo">draft</span>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-empty">No drafts</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── 5. Sent ── -->
+  <div class="col">
+    <div class="col-head" style="color:var(--accent);">
+      Sent
+      <span class="col-count">{{ sent_emails|length }}</span>
+    </div>
+    <div class="cards">
+      {% for e in sent_emails %}
+      <div class="card">
+        <div class="card-name" title="{{ e.company_name }}">{{ e.company_name }}</div>
+        <div class="card-meta">
+          {% if e.contact_name %}<span class="badge bm">{{ e.contact_name }}</span>{% endif %}
+          {% if e.sent_at %}<span class="badge bd">{{ e.sent_at[:10] }}</span>{% endif %}
+        </div>
+        <form method="post" action="/advance/{{ e.id }}?stage=replied" style="margin-top:6px">
+          <button type="submit" class="btn-advance btn-adv-replied">Mark Replied</button>
+        </form>
+      </div>
+      {% else %}
+      <div class="card-empty">None sent yet</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── 6. Replied ── -->
+  <div class="col">
+    <div class="col-head" style="color:var(--green);">
+      Replied
+      <span class="col-count">{{ replied_emails|length }}</span>
+    </div>
+    <div class="cards">
+      {% for e in replied_emails %}
+      <div class="card">
+        <div class="card-name" title="{{ e.company_name }}">{{ e.company_name }}</div>
+        <div class="card-meta">
+          {% if e.contact_name %}<span class="badge bm">{{ e.contact_name }}</span>{% endif %}
+          {% if e.sent_at %}<span class="badge bg">{{ e.sent_at[:10] }}</span>{% endif %}
+        </div>
+        <div class="stage-btns">
+          <form method="post" action="/advance/{{ e.id }}?stage=screening" style="margin:0">
+            <button type="submit" class="btn-advance btn-adv-screen">Screening</button>
+          </form>
+          <form method="post" action="/advance/{{ e.id }}?stage=rejected" style="margin:0">
+            <button type="submit" class="btn-advance btn-adv-reject">Rejected</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div class="card-empty">No replies</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── 7. Screening / Interview ── -->
+  <div class="col">
+    <div class="col-head" style="color:var(--yellow);">
+      Screening / Interview
+      <span class="col-count">{{ screening_emails|length }}</span>
+    </div>
+    <div class="cards">
+      {% for e in screening_emails %}
+      <div class="card">
+        <div class="card-name" title="{{ e.company_name }}">{{ e.company_name }}</div>
+        <div class="card-meta">
+          {% if e.contact_name %}<span class="badge bm">{{ e.contact_name }}</span>{% endif %}
+          {% if e.email_status == 'screening' %}
+            <span class="badge by">screening</span>
           {% else %}
-            <span class="badge bo">sent</span>
+            <span class="badge bo">interview</span>
           {% endif %}
-          {% if c.sent_at %}
-            <span class="badge bm">{{ c.sent_at[:10] }}</span>
+        </div>
+        {% if e.email_status == 'screening' %}
+        <div class="stage-btns">
+          <form method="post" action="/advance/{{ e.id }}?stage=interview" style="margin:0">
+            <button type="submit" class="btn-advance btn-adv-interview">Interview</button>
+          </form>
+          <form method="post" action="/advance/{{ e.id }}?stage=rejected" style="margin:0">
+            <button type="submit" class="btn-advance btn-adv-reject">Rejected</button>
+          </form>
+        </div>
+        {% elif e.email_status == 'interview' %}
+        <div class="stage-btns">
+          <form method="post" action="/advance/{{ e.id }}?stage=offer" style="margin:0">
+            <button type="submit" class="btn-advance btn-adv-offer">Offer</button>
+          </form>
+          <form method="post" action="/advance/{{ e.id }}?stage=rejected" style="margin:0">
+            <button type="submit" class="btn-advance btn-adv-reject">Rejected</button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="card-empty">None</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── 8. Offer / Rejected ── -->
+  <div class="col">
+    <div class="col-head" style="color:var(--muted);">
+      Offer / Rejected
+      <span class="col-count">{{ terminal_emails|length }}</span>
+    </div>
+    <div class="cards">
+      {% for e in terminal_emails %}
+      <div class="card">
+        <div class="card-name" title="{{ e.company_name }}">{{ e.company_name }}</div>
+        <div class="card-meta">
+          {% if e.contact_name %}<span class="badge bm">{{ e.contact_name }}</span>{% endif %}
+          {% if e.email_status == 'offer' %}
+            <span class="badge bg">offer</span>
+          {% else %}
+            <span class="badge br">rejected</span>
           {% endif %}
         </div>
       </div>
       {% else %}
-      <div class="card-empty">Session 5 builds this</div>
+      <div class="card-empty">None</div>
       {% endfor %}
     </div>
   </div>

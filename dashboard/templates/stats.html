@@ -7,6 +7,7 @@
 {% endif %}
 
 <!-- ── headline numbers ── -->
+<div class="section-title">Company overview</div>
 <div class="stat-grid">
   <div class="stat-card">
     <div class="stat-label">Total scraped</div>
@@ -47,6 +48,60 @@
   <div class="stat-card">
     <div class="stat-label">Replies</div>
     <div class="stat-value green">{{ totals.replied }}</div>
+  </div>
+</div>
+
+<!-- ── pipeline stage stats ── -->
+<div class="section-title">Pipeline stage counts</div>
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Drafts</div>
+    <div class="stat-value orange">{{ pipeline_stats.draft }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Sent</div>
+    <div class="stat-value accent">{{ pipeline_stats.sent }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Replied</div>
+    <div class="stat-value green">{{ pipeline_stats.replied }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Screening</div>
+    <div class="stat-value yellow">{{ pipeline_stats.screening }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Interview</div>
+    <div class="stat-value orange">{{ pipeline_stats.interview }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Offer</div>
+    <div class="stat-value green">{{ pipeline_stats.offer }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Rejected (email)</div>
+    <div class="stat-value red">{{ pipeline_stats.rejected_email }}</div>
+  </div>
+</div>
+
+<!-- ── conversion rates ── -->
+<div class="section-title">Conversion rates</div>
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Replied / Sent</div>
+    <div class="stat-value green">{{ conversion_rates.reply_rate }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Screening / Replied</div>
+    <div class="stat-value yellow">{{ conversion_rates.screening_rate }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Interview / Screening</div>
+    <div class="stat-value orange">{{ conversion_rates.interview_rate }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Offer / Interview</div>
+    <div class="stat-value green">{{ conversion_rates.offer_rate }}%</div>
   </div>
 </div>
 
