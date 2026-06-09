@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from db import company_exists, insert_company, update_company_domain
+from scraper_himalayas import scrape_himalayas
 
 REMOTIVE_API = 'https://remotive.com/api/remote-jobs'
 JOBSPRESSO_URL = 'https://jobspresso.co/remote-work/'
@@ -512,6 +513,7 @@ def scrape_hackernews(conn, cfg: dict) -> int:
                 'query': 'Who Is Hiring',
                 'tags': 'story',
                 'hitsPerPage': 1,
+                'numericFilters': 'created_at_i>' + str(int(time.time()) - 45*86400),
             },
             headers={'User-Agent': 'Mozilla/5.0'},
             timeout=30,
@@ -676,5 +678,8 @@ def run_all(conn, cfg: dict) -> dict[str, int]:
 
     if sources.get('hackernews', True):
         results['hackernews'] = scrape_hackernews(conn, cfg)
+
+    if sources.get('himalayas', True):
+        results['himalayas'] = scrape_himalayas(conn, cfg)
 
     return results
