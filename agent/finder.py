@@ -192,10 +192,12 @@ def run(conn, cfg: dict) -> dict:
             emails = _apollo_search(domain, apollo_key)
             apollo_used += 1
 
-        # 3. Last resort: email guessing
+        # 3. No more guessing — if neither API found anything, skip this company
         if not emails:
-            emails = _guess_email(domain, company.get('name', ''))
-            logger.debug('Guessing emails for %s (%s)', company['name'], domain)
+            logger.debug('No contacts found for %s (%s) — skipping', company['name'], domain)
+            skipped += 1
+            time.sleep(0.5)
+            continue
 
         contact = _best_contact(emails, company['headcount'])
         if not contact:
