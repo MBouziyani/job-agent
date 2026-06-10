@@ -11,13 +11,14 @@ import os
 import re
 import time
 
-import anthropic
+from openai import OpenAI
 
 from db import get_emails_needing_followup, insert_email_draft
 
 logger = logging.getLogger(__name__)
 
-MODEL = 'claude-haiku-4-5-20251001'
+MODEL = 'deepseek-v4-flash'
+_DEEPSEEK_BASE = os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
 
 _SIGN_OFF = 'Mohammed Bouziyani | mb.bouziyani@gmail.com | linkedin.com/in/mohammed-bouziyani'
 
@@ -83,15 +84,18 @@ Return exactly this JSON (no other text):
 {{"subject": "Re: {email['subject']}", "body": "..."}}"""
 
 
-def _generate(client: anthropic.Anthropic, email: dict, is_final: bool = False) -> dict | None:
+def _generate(client: OpenAI, email: dict, is_final: bool = False) -> dict | None:
     try:
-        msg = client.messages.create(
+        msg = client.chat.completions.create(
             model=MODEL,
-            max_tokens=256,
-            system=_SYSTEM,
-            messages=[{'role': 'user', 'content': _build_prompt(email, is_final)}],
+            max_tokens=2048,
+            temperature=0,
+            messages=[
+                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'user', 'content': _build_prompt(email, is_final)},
+            ],
         )
-        text = msg.content[0].text.strip()
+        text = msg.choices[0].message.content.strip()
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
         result = json.loads(text.strip())
@@ -100,19 +104,17 @@ def _generate(client: anthropic.Anthropic, email: dict, is_final: bool = False) 
         logger.warning('Followup: incomplete JSON for %s', email['company_name'])
     except json.JSONDecodeError as exc:
         logger.error('Followup: JSON parse failed for %s: %s', email['company_name'], exc)
-    except anthropic.APIError as exc:
-        logger.error('Followup: Claude API error for %s: %s', email['company_name'], exc)
     except Exception as exc:
-        logger.error('Followup: unexpected error for %s: %s', email['company_name'], exc)
+        logger.error('Followup: API error for %s: %s', email['company_name'], exc)
     return None
 
 
 def run(conn, cfg: dict) -> dict:
-    if not os.environ.get('ANTHROPIC_API_KEY'):
-        logger.error('ANTHROPIC_API_KEY not set — skipping followup')
+    if not os.environ.get('DEEPSEEK_API_KEY'):
+        logger.error('DEEPSEEK_API_KEY not set — skipping followup')
         return {'drafted': 0, 'skipped': 0}
 
-    client = anthropic.Anthropic()
+    client = OpenAI(api_key=os.environ['DEEPSEEK_API_KEY'], base_url=_DEEPSEEK_BASE)
     days   = cfg.get('outreach', {}).get('followup_after_days', 7)
 
     drafted = skipped = 0

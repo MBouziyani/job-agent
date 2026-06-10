@@ -4,13 +4,15 @@ import os
 import re
 import time
 
-import anthropic
+from openai import OpenAI
 
 from db import get_unqualified_companies, update_company_qualification
 
 logger = logging.getLogger(__name__)
 
-MODEL = 'claude-haiku-4-5-20251001'
+MODEL = 'deepseek-v4-flash'
+_DEEPSEEK_BASE = os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
+_MAX_TOKENS = 2048
 
 _SYSTEM = (
     'You must respond with valid JSON only, no markdown, no explanation, no extra text. '
@@ -57,31 +59,32 @@ def _unwrap_json(text: str) -> str:
     return text.strip()
 
 
-def _score_company(client: anthropic.Anthropic, company: dict, cfg: dict) -> dict | None:
+def _score_company(client: OpenAI, company: dict, cfg: dict) -> dict | None:
     try:
-        msg = client.messages.create(
+        msg = client.chat.completions.create(
             model=MODEL,
-            max_tokens=256,
-            system=_SYSTEM,
-            messages=[{'role': 'user', 'content': _build_prompt(company, cfg)}],
+            max_tokens=_MAX_TOKENS,
+            temperature=0,
+            messages=[
+                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'user', 'content': _build_prompt(company, cfg)},
+            ],
         )
-        text = _unwrap_json(msg.content[0].text)
+        text = _unwrap_json(msg.choices[0].message.content or '')
         return json.loads(text)
     except json.JSONDecodeError as exc:
         logger.error('JSON parse failed for %s: %s | raw: %.200s', company['name'], exc, text)
-    except anthropic.APIError as exc:
-        logger.error('Claude API error for %s: %s', company['name'], exc)
     except Exception as exc:
-        logger.error('Unexpected error qualifying %s: %s', company['name'], exc)
+        logger.error('API error qualifying %s: %s', company['name'], exc)
     return None
 
 
 def run(conn, cfg: dict) -> dict:
-    if not os.environ.get('ANTHROPIC_API_KEY'):
-        logger.error('ANTHROPIC_API_KEY not set — skipping qualification')
+    if not os.environ.get('DEEPSEEK_API_KEY'):
+        logger.error('DEEPSEEK_API_KEY not set — skipping qualification')
         return {'scored': 0, 'qualified': 0, 'disqualified': 0}
 
-    client = anthropic.Anthropic()
+    client = OpenAI(api_key=os.environ['DEEPSEEK_API_KEY'], base_url=_DEEPSEEK_BASE)
     min_score = cfg.get('qualification', {}).get('min_score', 7)
     companies = get_unqualified_companies(conn)
     logger.info('Qualifying %d companies (min_score=%d)', len(companies), min_score)
