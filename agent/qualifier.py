@@ -16,7 +16,9 @@ _MAX_TOKENS = 2048
 
 _SYSTEM = (
     'You must respond with valid JSON only, no markdown, no explanation, no extra text. '
-    'You are evaluating companies for a junior full-stack developer cold outreach campaign.'
+    'You are evaluating companies for a junior developer cold outreach campaign — the '
+    'candidate can fit full-stack, backend, frontend, cloud/DevOps, AI/ML, data engineering, '
+    'platform engineering, or SRE roles. Be generous when any dev-role overlap exists.'
 )
 
 
@@ -33,13 +35,17 @@ Description:  {(company['description'] or 'none')[:400]}
 Tags/Stack:   {company['stack'] or 'unknown'}
 Headcount:    {company['headcount'] or 'unknown'}
 
+The candidate can fill ANY dev role: full-stack, backend, frontend, cloud/DevOps,
+AI/ML, data engineering, platform engineering, or SRE. Score generously if the
+company uses modern tech that a junior could grow into.
+
 Score based ONLY on remote-friendliness potential. Most tech companies hiring on RemoteOK
 are at least partially remote. Be generous — a score of 5+ means worth investigating further.
 Only score 0-2 for companies that are obviously not remote (restaurants, physical retail,
 local services).
 
 Scoring rules (start at 0, max 10):
-  +3  headcount 10–80
+  +3  headcount 10-80
   -3  headcount > 200
   +2  description signals remote-first ("async", "work from anywhere", "distributed", "no timezone")
   +2  stack overlaps with: {keywords}

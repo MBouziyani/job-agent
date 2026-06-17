@@ -149,6 +149,7 @@ def update_company_domain(conn: sqlite3.Connection, company_id: int, domain: str
 
 
 def get_unqualified_companies(conn: sqlite3.Connection) -> list[dict]:
+    conn.row_factory = sqlite3.Row
     rows = conn.execute(
         'SELECT * FROM companies WHERE qualified IS NULL ORDER BY created_at'
     ).fetchall()

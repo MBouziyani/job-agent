@@ -170,13 +170,13 @@ def run(conn=None, cfg: dict | None = None) -> dict:
             tz = draft['timezone'] if draft['timezone'] else None
             is_optimal, reason = _is_optimal_time(tz)
             
-            if not is_optimal:
-                if tz:
-                    skipped_bad_time += 1
-                else:
-                    skipped_no_tz += 1
+            if tz and not is_optimal:
+                skipped_bad_time += 1
                 logger.debug('SKIP %s (%s)', draft['company_name'], reason)
                 continue
+            elif not tz:
+                skipped_no_tz += 1  # Will send anyway — timezone unknown
+                logger.debug('SEND (no tz) %s', draft['company_name'])
             
             # Send
             to_email = draft['contact_email']

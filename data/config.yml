@@ -4,14 +4,15 @@ scraping:
     we_work_remotely: true
     remotive: true
     jobspresso: true
-    wellfound: false  # blocked by Cloudflare in headless mode — re-enable if you find a proxy solution
+    wellfound: true  # Scrapling StealthyFetcher bypasses Cloudflare
     stackoverflow: false  # Cloudflare blocks scraping
     hackernews: true
+    workatastartup: true  # Y Combinator job board - server-side rendered, no Cloudflare
 
 qualification:
   min_score: 3
   min_countries: 1
-  max_headcount: 5000
+  max_headcount: 500
   stack_keywords:
     # -------------- General backend / full-stack --------------
     - python
@@ -73,6 +74,40 @@ qualification:
     - pipelines
     - airflow
     - spark
+    - vector database
+    - embeddings
+    - fine tuning
+    - nlp
+    - computer vision
+    - llama
+    - mistral
+    - claude
+    - agent
+    - chatbot
+    - copilot
+    - ai engineer
+    # -------------- Cloud / DevOps (extra) --------------
+    - cloud native
+    - serverless
+    - lambda
+    - ecs
+    - eks
+    - ec2
+    - cloudformation
+    - argocd
+    - helm
+    - prometheus
+    - grafana
+    - datadog
+    - new relic
+    - istio
+    - envoy
+    - nginx
+    - gitops
+    - infrastructure as code
+    - incident response
+    - observability
+    - site reliability
     # -------------- Databases --------------
     - postgresql
     - postgres
