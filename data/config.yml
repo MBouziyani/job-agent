@@ -146,8 +146,8 @@ qualification:
     - joomla
 
 outreach:
-  max_drafts_per_day: 3
-  max_emails_per_week: 15
+  max_drafts_per_day: 5
+  max_emails_per_week: 25
   followup_after_days: 7
   language: english
 
