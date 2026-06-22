@@ -11,7 +11,30 @@
   <a href="/companies?f=qualified" class="filter-tab {% if f == 'qualified' %}active{% endif %}">Qualified</a>
   <a href="/companies?f=rejected"  class="filter-tab {% if f == 'rejected' %}active{% endif %}">Rejected</a>
   <a href="/companies?f=no_domain" class="filter-tab {% if f == 'no_domain' %}active{% endif %}">No domain</a>
+  <a href="/companies?f=no_url"    class="filter-tab {% if f == 'no_url' %}active{% endif %}">No careers URL</a>
 </div>
+
+<!-- Score + Timezone Filters -->
+<form method="get" action="/companies" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0;padding:10px 14px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+  <input type="hidden" name="f" value="{{ f }}">
+
+  <label style="font-size:12px;font-weight:500;color:var(--muted)">Score:</label>
+  <input type="number" name="score_min" placeholder="Min" value="{{ score_min or '' }}" step="1" min="0" max="10"
+         style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px;font-size:13px">
+  <span style="color:var(--muted)">—</span>
+  <input type="number" name="score_max" placeholder="Max" value="{{ score_max or '' }}" step="1" min="0" max="10"
+         style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px;font-size:13px">
+
+  <label style="font-size:12px;font-weight:500;color:var(--muted);margin-left:8px">Timezone:</label>
+  <input type="text" name="timezone" placeholder="e.g. Europe/Paris" value="{{ tz_filter or '' }}"
+         style="width:140px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px;font-size:13px">
+
+  <button type="submit" class="btn-sm" style="background:var(--accent);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer">Filter</button>
+
+  <a href="/companies" style="font-size:12px;color:var(--muted);margin-left:4px">Clear</a>
+
+  <span style="margin-left:auto;font-size:12px;color:var(--muted)">{{ rows|length }} companies</span>
+</form>
 
 <div class="table-wrap">
   <table>

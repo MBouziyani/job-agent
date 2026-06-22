@@ -888,24 +888,41 @@ def run_all():
 @app.route('/companies')
 def companies():
     f = request.args.get('f', 'all')
+    score_min = request.args.get('score_min', type=float)
+    score_max = request.args.get('score_max', type=float)
+    tz_filter = request.args.get('timezone', '').strip()
     try:
         conn = _db()
+
+        conditions = []
+        params = []
+
         if f == 'qualified':
-            rows = conn.execute(
-                'SELECT * FROM companies WHERE qualified = 1 ORDER BY remote_score DESC'
-            ).fetchall()
+            conditions.append('c.qualified = 1')
         elif f == 'rejected':
-            rows = conn.execute(
-                'SELECT * FROM companies WHERE qualified = 0 ORDER BY remote_score DESC'
-            ).fetchall()
+            conditions.append('c.qualified = 0')
         elif f == 'no_domain':
-            rows = conn.execute(
-                'SELECT * FROM companies WHERE domain IS NULL ORDER BY created_at DESC'
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                'SELECT * FROM companies ORDER BY created_at DESC'
-            ).fetchall()
+            conditions.append("(c.domain IS NULL OR c.domain = '')")
+        elif f == 'no_url':
+            conditions.append("(c.careers_url IS NULL OR c.careers_url = '')")
+
+        if score_min is not None:
+            conditions.append('c.remote_score >= ?')
+            params.append(score_min)
+        if score_max is not None:
+            conditions.append('c.remote_score <= ?')
+            params.append(score_max)
+        if tz_filter:
+            conditions.append('c.timezone = ?')
+            params.append(tz_filter)
+
+        where = ' WHERE ' + ' AND '.join(conditions) if conditions else ''
+
+        rows = conn.execute(
+            f'SELECT * FROM companies c{where} ORDER BY c.remote_score DESC',
+            params,
+        ).fetchall()
+
         # Estimate timezone for companies without one
         rows = [dict(row) for row in rows]
         for row in rows:
@@ -914,17 +931,19 @@ def companies():
                 if estimated:
                     try:
                         conn.execute(
-                            'UPDATE companies SET timezone = ? WHERE id = ? AND timezone IS NULL',
-                            (estimated, row['id']),
+                            'UPDATE companies SET timezone = ? WHERE id = ? AND (timezone IS NULL OR timezone = ?)',
+                            (estimated, row['id'], ''),
                         )
                         conn.commit()
                     except Exception:
                         pass
         conn.close()
     except Exception as exc:
-        return render_template('companies.html', error=str(exc), rows=[], f=f)
+        return render_template('companies.html', error=str(exc), rows=[], f=f,
+                               score_min=score_min, score_max=score_max, tz_filter=tz_filter)
 
-    return render_template('companies.html', rows=rows, f=f, error=None)
+    return render_template('companies.html', rows=rows, f=f, error=None,
+                           score_min=score_min, score_max=score_max, tz_filter=tz_filter)
 
 
 @app.route('/force_qualify/<int:company_id>', methods=['POST'])
