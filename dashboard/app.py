@@ -1574,7 +1574,7 @@ IMPORTANT rules:
                 result = _call_deepseek(
                     [{'role': 'user', 'content': user_prompt}],
                     system_prompt,
-                    max_tokens=4096,
+                    max_tokens=8192,
                 )
                 
                 parsed = _parse_deepseek_json(result)
