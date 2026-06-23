@@ -8,3 +8,4 @@ playwright>=1.44
 google-auth-oauthlib>=1.4
 google-api-python-client>=2.197
 google-auth-httplib2>=0.4
+dnspython>=2.6
