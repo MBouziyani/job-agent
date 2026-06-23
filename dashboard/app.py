@@ -1478,7 +1478,7 @@ Text: {job_desc[:500]}"""
                     detected_lang = _call_deepseek(
                         [{'role': 'user', 'content': detect_lang_prompt}],
                         'You detect language. Return one word: en or fr.',
-                        max_tokens=10,
+                        max_tokens=64,
                     ).strip().lower()
                     if detected_lang not in ('en', 'fr'):
                         detected_lang = 'en'
@@ -1512,7 +1512,7 @@ IMPORTANT rules:
                 result = _call_deepseek(
                     [{'role': 'user', 'content': user_prompt}],
                     system_prompt,
-                    max_tokens=3072,
+                    max_tokens=4096,
                 )
                 
                 parsed = json.loads(result)
