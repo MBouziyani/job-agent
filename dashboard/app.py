@@ -1337,26 +1337,36 @@ def _adapt_cv_pdf(pdf_path: str, changes: dict) -> str:
             # Don't touch the stack line at top (y≈137) - it's decorative
             if rect.y0 > 140 and rect.y0 < 150:
                 continue
-            page.add_redact_annot(rect, fill=(1, 1, 1))
+            page.add_redact_annot(rect, fill=None)  # No white fill - just delete text
         
         page.apply_redactions()
         
-        # Insert new text at the position of the first occurrence
-        first_rect = rects[0]
-        for r in rects:
-            if r.y0 > 140:  # skip the stack line
-                first_rect = r
-                break
-        
-        new_font_size = 7.3 if first_rect.y1 - first_rect.y0 > 8 else 6.6
-        
-        page.insert_text(
-            fitz.Point(first_rect.x0, first_rect.y1 - 1.5),
-            new,
-            fontname="helv",
-            fontsize=new_font_size,
-            color=(0x0e / 255, 0x0f / 255, 0x0c / 255),
-        )
+        # Insert new text at EVERY redacted position (not just first)
+        for rect in rects:
+            # Don't touch the stack line at top (y≈137) - it's decorative
+            if rect.y0 > 140 and rect.y0 < 150:
+                continue
+            
+            # Calculate font size based on text height
+            text_h = rect.y1 - rect.y0
+            new_font_size = 7.3 if text_h > 8 else 6.6
+            
+            # For multi-word replacements, adjust font size to fit
+            new_len = len(new)
+            old_len = len(old)
+            if new_len > old_len and old_len > 0:
+                # Tighten font size slightly if new text is longer
+                ratio = old_len / new_len
+                new_font_size = new_font_size * min(1.0, ratio * 1.2)
+                new_font_size = max(new_font_size, 5.0)
+            
+            page.insert_text(
+                fitz.Point(rect.x0, rect.y1 - 1.5),
+                new,
+                fontname="helv",
+                fontsize=new_font_size,
+                color=(0x0e / 255, 0x0f / 255, 0x0c / 255),
+            )
     
     # 2. Replace profile text if provided
     profile = changes.get('profile', {})
@@ -1384,14 +1394,9 @@ def _adapt_cv_pdf(pdf_path: str, changes: dict) -> str:
                 profile_rects.append(block["bbox"])
         
         if profile_rects:
-            # Redact the entire profile area
-            min_y = min(r[1] for r in profile_rects) - 2
-            max_y = max(r[3] for r in profile_rects) + 2
-            min_x = min(r[0] for r in profile_rects)
-            max_x = max(r[2] for r in profile_rects)
-            
-            profile_bbox = fitz.Rect(min_x, min_y, max_x, max_y)
-            page.add_redact_annot(profile_bbox, fill=(1, 1, 1))
+            # Redact each line individually (no big white rectangle)
+            for rect in profile_rects:
+                page.add_redact_annot(fitz.Rect(rect[0], rect[1], rect[2], rect[3]), fill=None)
             page.apply_redactions()
             
             # Get profile text - could be a string or list of lines
