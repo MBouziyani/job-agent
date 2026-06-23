@@ -1134,6 +1134,139 @@ def stats():
                            error=None)
 
 
+# ── LinkedIn Outreach ─────────────────────────────────────────────────────────
+
+import json as _json
+import re as _re
+
+_OUTREACH_SYSTEM = """You are an expert career coach and copywriter. Write a cold outreach email for a job application that is specific, concise, and effective.
+
+Rules:
+- NEVER change years of experience or job titles
+- Adapt technology keywords to match the job description
+- Keep body under 100 words (excluding greeting and sign-off)
+- Start with "Hi {firstName}," on its own line
+- Reference something specific about the company
+- End with: "Would a 15-min call make sense?"
+- Sign-off: Mohammed Bouziyani | mb.bouziyani@gmail.com | linkedin.com/in/mohammed-bouziyani
+- No filler phrases
+- Subject must reference the company
+
+Return JSON: {"subject": "...", "body": "..."}"""
+
+_OUTREACH_CV_SYSTEM = """You are an expert resume writer. Adapt Mohammed's CV to match a job posting.
+
+Rules:
+- NEVER change dates, company names, job titles, or education
+- DO rewrite technology keywords to match the job
+- Make bullets use the exact tech keywords from the job description where plausible
+
+Return JSON with:
+- lead_experience: what to put first
+- cv_bullets: rewritten bullets per experience
+- project_to_emphasize: which project + how to describe it
+- ats_keywords_to_include: list of keywords
+- experience_order: ordered list
+- notes: any ATS tips"""
+
+_BASE_OUTREACH_PROFILE = """Name: Mohammed Bouziyani
+Location: Morocco — open to remote worldwide
+
+Experience:
+1. Full-stack internship (Feb-May 2025) - Networia: built a task management web app
+2. Full-stack developer contract (Mar-Sep 2024) - Vision Business Consulting: web + mobile apps for enterprise clients, 20% perf gain
+3. Full-stack internship (Jun-Aug 2023) - Networia: medical practice management system
+4. Internship (May-Jul 2022) - FSSM Marrakech: HR application
+
+Projects:
+- Job Search Agent: multi-agent AI pipeline (Claude API, APScheduler, SQLite, Flask, Docker Compose, DigitalOcean)
+- E-commerce platform: Spring Boot + React + PostgreSQL + Docker
+
+Education: CS & Information Systems Engineering, Universite Privee de Marrakech (2024)
+Languages: Arabic (native), French (C1), English (B2)"""
+
+
+def _call_deepseek(messages: list, system: str, max_tokens: int = 2048) -> str:
+    from openai import OpenAI
+    api_key = os.environ.get('DEEPSEEK_API_KEY')
+    if not api_key:
+        raise RuntimeError('DEEPSEEK_API_KEY not set')
+    client = OpenAI(api_key=api_key, base_url='https://api.deepseek.com')
+    resp = client.chat.completions.create(
+        model='deepseek-v4-flash',
+        max_tokens=max_tokens,
+        temperature=0.2,
+        messages=[{'role': 'system', 'content': system}] + messages,
+    )
+    text = resp.choices[0].message.content.strip()
+    text = _re.sub(r'^```(?:json)?\s*', '', text)
+    text = _re.sub(r'\s*```$', '', text)
+    return text
+
+
+@app.route('/outreach', methods=['GET', 'POST'])
+def outreach():
+    error = msg = None
+    analysis = email = cv = None
+    job_desc = contact_name = contact_role = ''
+    generating = False
+
+    if request.method == 'POST':
+        job_desc = request.form.get('job_desc', '').strip()
+        contact_name = request.form.get('contact_name', '').strip()
+        contact_role = request.form.get('contact_role', '').strip()
+        generating = True
+
+        if not job_desc:
+            error = 'Please paste a job description'
+        else:
+            try:
+                # Step 1: Analyze
+                analysis_raw = _call_deepseek(
+                    [{'role': 'user', 'content': f'Analyze this job posting. Return JSON with: company_name, role_title, seniority, main_stack (array), domain (backend/frontend/full-stack/devops/ai/data/cloud), remote_policy, key_requirements (array of 5), role_type_category (JAVA_SPRING/AI_COMPANY/DEVOPS_CLOUD/NODEJS_PYTHON/FRENCH_STARTUP/GENERAL_TECH/FRONTEND/DATA_ENGINEERING).\n\nJob:\n{job_desc[:2500]}'}],
+                    'Extract structured info from this job posting. Return JSON.',
+                )
+                analysis = _json.loads(analysis_raw)
+
+                # Step 2: Generate email
+                contact_line = contact_name
+                if contact_name and contact_role:
+                    contact_line = f'{contact_name} ({contact_role})'
+                elif contact_name:
+                    contact_line = contact_name
+                else:
+                    contact_line = 'the hiring team'
+
+                stack_str = ', '.join(analysis.get('main_stack', []))
+                reqs_str = '\n'.join(f'- {r}' for r in analysis.get('key_requirements', []))
+
+                email_raw = _call_deepseek(
+                    [{'role': 'user', 'content': f'Write a cold outreach email from Mohammed Bouziyani to {contact_line} at {analysis.get("company_name", "the company")}.\n\nRole: {analysis.get("role_title", "?")}\nStack: {stack_str}\nDomain: {analysis.get("domain", "?")}\nCategory: {analysis.get("role_type_category", "GENERAL_TECH")}\nRequirements:\n{reqs_str}\n\nProfile:\n{_BASE_OUTREACH_PROFILE}\n\nReturn JSON: {{"subject": "...", "body": "..."}}'}],
+                    _OUTREACH_SYSTEM,
+                )
+                email = _json.loads(email_raw)
+
+                # Step 3: Generate CV adaptation
+                cv_raw = _call_deepseek(
+                    [{'role': 'user', 'content': f'Adapt Mohammed\'s CV for:\n\nCompany: {analysis.get("company_name", "?")}\nRole: {analysis.get("role_title", "?")}\nStack: {stack_str}\nCategory: {analysis.get("role_type_category", "GENERAL_TECH")}\nRequirements:\n{reqs_str}\n\nBase CV:\n{_BASE_OUTREACH_PROFILE}\n\nReturn JSON with lead_experience, cv_bullets, project_to_emphasize, ats_keywords_to_include, experience_order, notes. NEVER change dates or company names.'}],
+                    _OUTREACH_CV_SYSTEM,
+                )
+                cv = _json.loads(cv_raw)
+
+            except Exception as exc:
+                error = f'Generation failed: {exc}'
+            finally:
+                generating = False
+
+    return render_template('outreach.html',
+                           error=error, msg=msg,
+                           analysis=analysis, email=email, cv=cv,
+                           job_desc=job_desc,
+                           contact_name=contact_name,
+                           contact_role=contact_role,
+                           generating=generating)
+
+
 # ── health ────────────────────────────────────────────────────────────────────
 
 @app.route('/health')

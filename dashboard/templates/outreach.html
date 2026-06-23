@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}LinkedIn Outreach — Job Agent{% endblock %}
+
+{% block content %}
+
+{% if error %}
+  <div class="banner banner-error">{{ error }}</div>
+{% endif %}
+
+{% if msg %}
+  <div class="banner banner-success">{{ msg }}</div>
+{% endif %}
+
+<div style="display:flex;gap:24px;align-items:start">
+  <!-- Left: Form -->
+  <div style="flex:1;max-width:560px">
+    <div class="table-wrap">
+      <div style="padding:16px">
+        <h2 style="font-size:16px;font-weight:600;margin-bottom:16px">📝 New Outreach</h2>
+        <form method="post">
+          <div style="margin-bottom:12px">
+            <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Job Description / LinkedIn Post</label>
+            <textarea name="job_desc" rows="12" placeholder="Paste the job description or LinkedIn post here..." required
+              style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;line-height:1.6;padding:12px;resize:vertical;outline:none;margin-top:6px">{{ job_desc or '' }}</textarea>
+          </div>
+          <div style="display:flex;gap:12px;margin-bottom:16px">
+            <div style="flex:1">
+              <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Contact Name (optional)</label>
+              <input type="text" name="contact_name" placeholder="e.g. Omar Kamoun" value="{{ contact_name or '' }}"
+                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:8px 10px;font-size:13px;margin-top:6px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Their Role (optional)</label>
+              <input type="text" name="contact_role" placeholder="e.g. HR Manager" value="{{ contact_role or '' }}"
+                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:8px 10px;font-size:13px;margin-top:6px">
+            </div>
+          </div>
+          <button type="submit" class="btn" style="width:100%;text-align:center;margin-top:0"
+            {% if generating %}disabled{% endif %}>
+            {% if generating %}⏳ Generating...{% else %}🚀 Generate Email + CV{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Result -->
+  <div style="flex:2;min-width:0">
+    {% if analysis %}
+    <div class="table-wrap" style="margin-bottom:16px">
+      <div style="padding:14px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid var(--border);background:var(--surface2)">
+        <span style="font-size:15px;font-weight:600">{{ analysis.company_name or 'Unknown' }}</span>
+        <span class="badge bd">{{ analysis.role_title or '?' }}</span>
+        <span class="badge bg" style="text-transform:capitalize">{{ analysis.seniority or '?' }}</span>
+        <span class="badge bm">{{ analysis.domain or '?' }}</span>
+        <span class="badge bo">{{ analysis.remote_policy or '?' }}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">
+          Stack: {{ analysis.main_stack|join(', ') if analysis.main_stack else '?' }}
+        </span>
+      </div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--muted)">
+        <strong>Requirements:</strong>
+        <ul style="margin:6px 0 0 16px">
+          {% for req in (analysis.key_requirements or [])[:5] %}
+          <li style="margin-bottom:2px">{{ req }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    {% if email %}
+    <div class="table-wrap" style="margin-bottom:16px">
+      <div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);background:var(--surface2)">
+        <span style="font-weight:600;font-size:13px">✉️ Generated Email</span>
+        <div style="display:flex;gap:6px">
+          <button onclick="copyEmail()" class="btn-sm" style="background:var(--accent);color:#fff;border:none;padding:4px 12px;font-size:11px">📋 Copy</button>
+          <button onclick="copySubject()" class="btn-sm" style="background:var(--accent);color:#fff;border:none;padding:4px 12px;font-size:11px">📋 Copy Subject</button>
+        </div>
+      </div>
+      <div style="padding:6px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)">
+        <strong>Subject:</strong> <span id="email-subject">{{ email.subject }}</span>
+      </div>
+      <div class="email-body" id="email-body">{{ email.body }}</div>
+    </div>
+    {% endif %}
+
+    {% if cv %}
+    <div class="table-wrap">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface2)">
+        <span style="font-weight:600;font-size:13px">📄 CV Adaptation</span>
+      </div>
+      <div style="padding:14px 16px">
+        <div style="margin-bottom:12px">
+          <span class="badge bg" style="font-size:11px;padding:3px 10px">Lead with: {{ cv.lead_experience }}</span>
+        </div>
+
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+          <strong>Experience order:</strong>
+          <ol style="margin:6px 0 0 16px">
+            {% for exp in (cv.experience_order or []) %}
+            <li style="margin-bottom:2px;color:var(--text)">{{ exp }}</li>
+            {% endfor %}
+          </ol>
+        </div>
+
+        <details style="margin-top:12px">
+          <summary style="font-size:12px;color:var(--accent);cursor:pointer;font-weight:600">Rewritten Bullets</summary>
+          <div style="margin-top:8px">
+            {% for exp, bullets in cv.cv_bullets.items() %}
+            {% if bullets %}
+            <div style="margin-bottom:10px;padding:8px 10px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;text-transform:uppercase">{{ exp.replace('_', ' ') }}</div>
+              {% for b in bullets %}
+              <div style="font-size:12px;padding:2px 0;color:var(--text)">• {{ b }}</div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% endfor %}
+          </div>
+        </details>
+
+        <div style="margin-top:12px">
+          <span style="font-size:12px;font-weight:600;color:var(--muted)">Project to emphasize:</span>
+          <span style="font-size:12px;color:var(--text);margin-left:6px">{{ cv.project_to_emphasize }}</span>
+        </div>
+
+        <div style="margin-top:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--muted)">ATS Keywords:</span>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+            {% for kw in (cv.ats_keywords_to_include or []) %}
+            <span class="badge bd" style="font-size:10px">{{ kw }}</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if cv.notes %}
+        <div style="margin-top:12px;padding:8px 10px;background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.25);border-radius:4px;font-size:12px;color:var(--yellow)">
+          💡 {{ cv.notes }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% elif not generating %}
+    <div class="table-wrap">
+      <div style="padding:40px 24px;text-align:center;color:var(--muted)">
+        <div style="font-size:48px;margin-bottom:12px">📩</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Paste a job description to get started</div>
+        <div style="font-size:12px">I'll generate a tailored email + CV adaptation for you</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function copyEmail() {
+  const body = document.getElementById('email-body');
+  const subject = document.getElementById('email-subject');
+  const text = `Subject: ${subject.textContent}\n\n${body.textContent}`;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('[onclick="copyEmail()"]');
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+  });
+}
+function copySubject() {
+  const subject = document.getElementById('email-subject');
+  navigator.clipboard.writeText(subject.textContent).then(() => {
+    const btn = document.querySelector('[onclick="copySubject()"]');
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy Subject', 2000);
+  });
+}
+</script>
+
+{% endblock %}
