@@ -1614,7 +1614,13 @@ def download_adapted(filename):
     path = _ADAPTED_DIR / filename
     if not path.exists():
         return {'error': 'File not found'}, 404
-    return send_file(str(path), as_attachment=True, download_name=filename)
+    resp = send_file(str(path), as_attachment=True, download_name=filename,
+                     mimetype='application/octet-stream')
+    resp.headers['Content-Type'] = 'application/octet-stream'
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 @app.route('/preview/<filename>')
