@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 import yaml
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, redirect, render_template, request, url_for, send_file
 
 logger = logging.getLogger(__name__)
 
@@ -1272,6 +1272,309 @@ def outreach():
 @app.route('/health')
 def health():
     return {'status': 'ok'}
+
+
+# ── CV Adapter ─────────────────────────────────────────────────────────────────
+
+_ADAPTED_DIR = Path('/data/cv_adapted')
+_ADAPTED_DIR.mkdir(parents=True, exist_ok=True)
+
+CV_EN = '/data/cv_en.pdf'
+CV_FR = '/data/cv_fr.pdf'
+
+_CV_ADAPT_SYSTEM = """You are a CV adaptation expert. Analyze a job posting and suggest specific text edits for a PDF CV.
+
+Rules:
+- NEVER change dates, company names, job titles, or education
+- Technology keyword swaps MUST be 1:1 replacements from existing CV text
+- Profile text rewrite: keep the same length (3-4 lines), same tone, reference the target role/company
+- Return valid JSON only — no markdown, no explanation
+
+Return JSON: {
+  "analysis": {
+    "company_name": "...",
+    "role_title": "...",
+    "seniority": "junior/mid/senior",
+    "domain": "backend/frontend/fullstack/devops/ai/data",
+    "remote_policy": "remote/hybrid/onsite",
+    "key_requirements": ["req1", "req2", "req3", "req4", "req5"]
+  },
+  "profile": {
+    "old_text": "exact original profile text",
+    "new_text": ["line1 (max ~95 chars)", "line2 (max ~95 chars)", "line3 (max ~95 chars)"]
+  },
+  "stack_swaps": [
+    {"old": "exact text in CV", "new": "replacement text"}
+  ],
+  "fixes": [
+    {"old": "exact text to fix", "new": "replacement text"}
+  ]
+}
+
+IMPORTANT: profile.new_text MUST be an array of strings, each line max ~95 characters.
+Only include stack_swaps and fixes that actually differ from the original CV text."""
+
+
+def _adapt_cv_pdf(pdf_path: str, changes: dict) -> str:
+    """Apply text changes to a PDF using PyMuPDF. Returns path to adapted PDF."""
+    import fitz
+
+    doc = fitz.open(pdf_path)
+    page = doc[0]
+    
+    # 1. Apply simple text replacements (stack swaps + fixes)
+    for entry in changes.get('stack_swaps', []) + changes.get('fixes', []):
+        old = entry['old']
+        new = entry['new']
+        if old == new:
+            continue
+        
+        rects = page.search_for(old)
+        if not rects:
+            continue
+        
+        for rect in rects:
+            # Don't touch the stack line at top (y≈137) - it's decorative
+            if rect.y0 > 140 and rect.y0 < 150:
+                continue
+            page.add_redact_annot(rect, fill=(1, 1, 1))
+        
+        page.apply_redactions()
+        
+        # Insert new text at the position of the first occurrence
+        first_rect = rects[0]
+        for r in rects:
+            if r.y0 > 140:  # skip the stack line
+                first_rect = r
+                break
+        
+        new_font_size = 7.3 if first_rect.y1 - first_rect.y0 > 8 else 6.6
+        
+        page.insert_text(
+            fitz.Point(first_rect.x0, first_rect.y1 - 1.5),
+            new,
+            fontname="helv",
+            fontsize=new_font_size,
+            color=(0x0e / 255, 0x0f / 255, 0x0c / 255),
+        )
+    
+    # 2. Replace profile text if provided
+    profile = changes.get('profile', {})
+    if profile and profile.get('new_text'):
+        # Find the profile section bbox
+        blocks = page.get_text("dict")["blocks"]
+        in_profile = False
+        profile_rects = []
+        
+        for block in blocks:
+            if block.get("type") != 0:
+                continue
+            text = ""
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text += span["text"]
+            
+            if "# profile" in text or "# profil" in text:
+                in_profile = True
+                continue
+            if "// stack" in text:
+                in_profile = False
+                continue
+            if in_profile and block.get("bbox"):
+                profile_rects.append(block["bbox"])
+        
+        if profile_rects:
+            # Redact the entire profile area
+            min_y = min(r[1] for r in profile_rects) - 2
+            max_y = max(r[3] for r in profile_rects) + 2
+            min_x = min(r[0] for r in profile_rects)
+            max_x = max(r[2] for r in profile_rects)
+            
+            profile_bbox = fitz.Rect(min_x, min_y, max_x, max_y)
+            page.add_redact_annot(profile_bbox, fill=(1, 1, 1))
+            page.apply_redactions()
+            
+            # Get profile text - could be a string or list of lines
+            raw = profile['new_text']
+            if isinstance(raw, list):
+                lines = [l.strip() for l in raw if l.strip()]
+            else:
+                lines = [l.strip() for l in raw.split('\n') if l.strip()]
+            
+            # If we got a single long paragraph, wrap it to fit width
+            if len(lines) <= 2:
+                wrapped = _wrap_text(' '.join(lines), max_chars=95)
+                lines = wrapped if wrapped else lines
+            
+            # Insert line by line
+            y_pos = profile_rects[0][1]  # original first line y
+            for line_text in lines[:4]:  # max 4 lines like original
+                page.insert_text(
+                    fitz.Point(54, y_pos + 8),
+                    line_text,
+                    fontname="helv",
+                    fontsize=7.9,
+                    color=(0x0e / 255, 0x0f / 255, 0x0c / 255),
+                )
+                y_pos += 11  # line height at 7.9pt
+    
+    # Save
+    stem = Path(pdf_path).stem
+    out_name = f"{stem}_adapted_{int(time.time())}.pdf"
+    out_path = _ADAPTED_DIR / out_name
+    doc.save(str(out_path))
+    doc.close()
+    return out_name
+
+
+def _wrap_text(text: str, max_chars: int = 95) -> list:
+    """Wrap text to fit within max_chars per line, breaking at word boundaries."""
+    words = text.split()
+    lines = []
+    current = []
+    current_len = 0
+    
+    for word in words:
+        if current_len + len(word) + (1 if current else 0) > max_chars:
+            if current:
+                lines.append(' '.join(current))
+                current = []
+                current_len = 0
+        current.append(word)
+        current_len += len(word) + (1 if len(current) > 1 else 0)
+    
+    if current:
+        lines.append(' '.join(current))
+    
+    return lines if lines else [text]
+
+
+@app.route('/cv-adapter', methods=['GET', 'POST'])
+def cv_adapter():
+    error = msg = None
+    analysis = changes = adapted_pdf = None
+    new_profile = stack_swaps = None
+    changes_list = []
+    job_desc = ''
+    lang = 'auto'
+    detected_lang = ''
+    generating = False
+    
+    if request.method == 'POST':
+        job_desc = request.form.get('job_desc', '').strip()
+        lang = request.form.get('lang', 'auto')
+        fix_alternance = request.form.get('fix_alternance') == '1'
+        generating = True
+        
+        if not job_desc:
+            error = 'Please paste a job description'
+        else:
+            try:
+                # Determine which CV to use
+                if lang == 'auto':
+                    # Detect language from job post
+                    detect_lang_prompt = f"""Detect the language of this text. Return one word: "fr" if French, "en" if English.
+Text: {job_desc[:500]}"""
+                    detected_lang = _call_deepseek(
+                        [{'role': 'user', 'content': detect_lang_prompt}],
+                        'You detect language. Return one word: en or fr.',
+                        max_tokens=10,
+                    ).strip().lower()
+                    if detected_lang not in ('en', 'fr'):
+                        detected_lang = 'en'
+                else:
+                    detected_lang = lang
+                
+                cv_path = CV_FR if detected_lang == 'fr' else CV_EN
+                
+                # Extract current CV text
+                import fitz
+                cv_doc = fitz.open(cv_path)
+                cv_text = cv_doc[0].get_text("text")
+                cv_doc.close()
+                
+                # Call DeepSeek to analyze + suggest changes
+                system_prompt = _CV_ADAPT_SYSTEM
+                user_prompt = f"""Job Description:
+{job_desc[:3000]}
+
+Current CV text ({'French' if detected_lang == 'fr' else 'English'}):
+{cv_text[:3000]}
+
+Analyze the job and suggest CV adaptations. Return JSON with analysis, profile rewrite, stack swaps, and fixes.
+
+IMPORTANT rules:
+- For stack_swaps: replace outdated/less relevant tech keywords with ones matching the JD
+- For profile: rewrite the summary to reference the target role/company
+- For fixes: {"change 'alternance'/'Stage' references to 'CDI'/'CDD'/'Contract' wording" if fix_alternance else "fix any mismatches"}
+- All replacements must be exact text from the CV PDF"""
+
+                result = _call_deepseek(
+                    [{'role': 'user', 'content': user_prompt}],
+                    system_prompt,
+                    max_tokens=3072,
+                )
+                
+                parsed = json.loads(result)
+                analysis = parsed.get('analysis', {})
+                changes = parsed
+                
+                # Store for display
+                profile_data = changes.get('profile', {})
+                raw_profile = profile_data.get('new_text', '') if profile_data else ''
+                if isinstance(raw_profile, list):
+                    new_profile = '\n'.join(raw_profile)
+                else:
+                    new_profile = str(raw_profile)
+                stack_swaps = changes.get('stack_swaps', [])
+                
+                # Build combined changes list for the "Changes Applied" table
+                changes_list = []
+                for sw in stack_swaps:
+                    changes_list.append({'old': sw.get('old', ''), 'new': sw.get('new', '')})
+                for fx in changes.get('fixes', []):
+                    changes_list.append({'old': fx.get('old', ''), 'new': fx.get('new', '')})
+                
+                # Apply PDF edits
+                adapted_pdf = _adapt_cv_pdf(cv_path, changes)
+                
+                msg = f'✅ CV adapted for {analysis.get("company_name", "this role")}'
+                
+            except Exception as exc:
+                error = f'Generation failed: {exc}'
+                import traceback
+                error += f'\n{traceback.format_exc()}'
+            finally:
+                generating = False
+    
+    return render_template('cv_adapter.html',
+                           error=error, msg=msg,
+                           analysis=analysis, changes=changes_list,
+                           adapted_pdf=adapted_pdf,
+                           new_profile=new_profile,
+                           stack_swaps=stack_swaps,
+                           job_desc=job_desc,
+                           lang=lang,
+                           detected_lang=detected_lang,
+                           generating=generating)
+
+
+@app.route('/download/<filename>')
+def download_adapted(filename):
+    """Serve adapted PDF for download."""
+    path = _ADAPTED_DIR / filename
+    if not path.exists():
+        return {'error': 'File not found'}, 404
+    return send_file(str(path), as_attachment=True, download_name=filename)
+
+
+@app.route('/preview/<filename>')
+def preview_adapted(filename):
+    """Embed adapted PDF preview."""
+    path = _ADAPTED_DIR / filename
+    if not path.exists():
+        return {'error': 'File not found'}, 404
+    return send_file(str(path), mimetype='application/pdf')
 
 
 if __name__ == '__main__':

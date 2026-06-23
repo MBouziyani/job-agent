@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}CV Adapter — Job Agent{% endblock %}
+
+{% block content %}
+
+{% if error %}
+  <div class="banner banner-error">{{ error }}</div>
+{% endif %}
+
+{% if msg %}
+  <div class="banner banner-success">{{ msg }}</div>
+{% endif %}
+
+<div style="display:flex;gap:24px;align-items:start">
+  <!-- Left: Form -->
+  <div style="flex:1;max-width:560px">
+    <div class="table-wrap">
+      <div style="padding:16px">
+        <h2 style="font-size:16px;font-weight:600;margin-bottom:16px">📄 CV Adapter</h2>
+        <form method="post">
+          <div style="margin-bottom:12px">
+            <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Job Description / Post</label>
+            <textarea name="job_desc" rows="12" placeholder="Paste the job description, LinkedIn post, or careers page content here..." required
+              style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'SFMono-Regular',Consolas,monospace;font-size:12px;line-height:1.6;padding:12px;resize:vertical;outline:none;margin-top:6px">{{ job_desc or '' }}</textarea>
+          </div>
+
+          <div style="display:flex;gap:12px;margin-bottom:16px">
+            <div style="flex:1">
+              <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">CV Language</label>
+              <select name="lang"
+                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:8px 10px;font-size:13px;margin-top:6px">
+                <option value="auto" {% if lang == 'auto' %}selected{% endif %}>🌐 Auto-detect</option>
+                <option value="en" {% if lang == 'en' %}selected{% endif %}>🇬🇧 English</option>
+                <option value="fr" {% if lang == 'fr' %}selected{% endif %}>🇫🇷 Français</option>
+              </select>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">
+                Auto = langue du poste
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-bottom:6px">
+            <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" name="fix_alternance" value="1" checked
+                style="accent-color:var(--accent)">
+              Changer "alternance/stage" → "travail/CDI"
+            </label>
+          </div>
+
+          <button type="submit" class="btn" style="width:100%;text-align:center;margin-top:12px"
+            {% if generating %}disabled{% endif %}>
+            {% if generating %}⏳ Adapting CV...{% else %}⚡ Adapt CV{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {% if changes %}
+    <div class="table-wrap" style="margin-top:16px">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface2)">
+        <span style="font-weight:600;font-size:13px">📋 Changes Applied</span>
+      </div>
+      <div style="padding:12px 16px;font-size:12px">
+        <table>
+          <tr><th style="padding:4px 8px;font-size:10px">Before</th><th style="padding:4px 8px;font-size:10px">→</th><th style="padding:4px 8px;font-size:10px">After</th></tr>
+          {% for c in changes %}
+          <tr>
+            <td style="padding:4px 8px;color:var(--red);font-size:11px"><del>{{ c.old }}</del></td>
+            <td style="padding:4px 8px;font-size:11px">→</td>
+            <td style="padding:4px 8px;color:var(--green);font-size:11px">{{ c.new }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Right: Result -->
+  <div style="flex:2;min-width:0">
+    {% if analysis %}
+    <div class="table-wrap" style="margin-bottom:16px">
+      <div style="padding:14px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid var(--border);background:var(--surface2)">
+        <span style="font-size:15px;font-weight:600">{{ analysis.company_name or 'Unknown' }}</span>
+        <span class="badge bd">{{ analysis.role_title or '?' }}</span>
+        <span class="badge bg" style="text-transform:capitalize">{{ analysis.seniority or '?' }}</span>
+        <span class="badge bo">{{ analysis.domain or '?' }}</span>
+        <span class="badge bm">{{ analysis.remote_policy or '?' }}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">
+          Detected: <strong>{{ detected_lang }}</strong>
+        </span>
+      </div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--muted)">
+        <strong>Key Requirements:</strong>
+        <ul style="margin:6px 0 0 16px">
+          {% for req in (analysis.key_requirements or [])[:5] %}
+          <li style="margin-bottom:2px">{{ req }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    {% if adapted_pdf %}
+    <div class="table-wrap" style="margin-bottom:16px">
+      <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:var(--surface2);border-bottom:1px solid var(--border)">
+        <span style="font-weight:600;font-size:13px">📄 Adapted CV</span>
+        <a href="/download/{{ adapted_pdf }}" class="btn-sm" style="background:var(--accent);color:#fff;border:none;padding:5px 16px;font-size:12px;text-decoration:none">⬇ Download PDF</a>
+      </div>
+      <div style="padding:14px 16px;text-align:center">
+        <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+          CV adapté pour <strong>{{ analysis.company_name or 'this role' }}</strong> — <strong>{{ analysis.role_title or '?' }}</strong>
+        </p>
+        <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--bg);display:inline-block;max-width:100%">
+          <iframe src="/preview/{{ adapted_pdf }}" style="width:100%;height:500px;border:none;background:#fff"></iframe>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if new_profile %}
+    <div class="table-wrap" style="margin-bottom:16px">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface2)">
+        <span style="font-weight:600;font-size:13px">✏️ Updated Profile</span>
+      </div>
+      <div style="padding:14px 16px;font-size:12px;white-space:pre-wrap;color:var(--text);line-height:1.7;background:var(--bg);font-family:'SFMono-Regular',Consolas,monospace">
+{{ new_profile }}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if stack_swaps %}
+    <div class="table-wrap">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface2)">
+        <span style="font-weight:600;font-size:13px">🔄 Keyword Swaps</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:8px">(skills adapted to match JD)</span>
+      </div>
+      <div style="padding:12px 16px;font-size:12px">
+        <table>
+          <tr><th style="padding:4px 8px;font-size:10px">Original</th><th style="padding:4px 8px;font-size:10px">→</th><th style="padding:4px 8px;font-size:10px">New</th></tr>
+          {% for s in stack_swaps %}
+          <tr>
+            <td style="padding:4px 8px;color:var(--red);font-size:11px"><del>{{ s.old }}</del></td>
+            <td style="padding:4px 8px;font-size:11px">→</td>
+            <td style="padding:4px 8px;color:var(--green);font-size:11px">{{ s.new }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% elif not generating %}
+    <div class="table-wrap">
+      <div style="padding:40px 24px;text-align:center;color:var(--muted)">
+        <div style="font-size:48px;margin-bottom:12px">📝</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Paste a job description to adapt your CV</div>
+        <div style="font-size:12px">I'll swap keywords, rewrite the profile, and generate a tailored PDF — design preserved</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+iframe { border-radius: 4px; }
+select { cursor: pointer; }
+select:focus { border-color: var(--accent); outline: none; }
+</style>
+{% endblock %}
