@@ -1188,20 +1188,33 @@ Languages: Arabic (native), French (C1), English (B2)"""
 
 def _call_deepseek(messages: list, system: str, max_tokens: int = 2048) -> str:
     from openai import OpenAI
+    import time as _time
     api_key = os.environ.get('DEEPSEEK_API_KEY')
     if not api_key:
         raise RuntimeError('DEEPSEEK_API_KEY not set')
-    client = OpenAI(api_key=api_key, base_url='https://api.deepseek.com')
-    resp = client.chat.completions.create(
-        model='deepseek-v4-flash',
-        max_tokens=max_tokens,
-        temperature=0.2,
-        messages=[{'role': 'system', 'content': system}] + messages,
-    )
-    text = resp.choices[0].message.content.strip()
-    text = _re.sub(r'^```(?:json)?\s*', '', text)
-    text = _re.sub(r'\s*```$', '', text)
-    return text
+    client = OpenAI(api_key=api_key, base_url='https://api.deepseek.com',
+                    timeout=60, max_retries=2)
+    
+    last_err = None
+    for attempt in range(3):
+        try:
+            resp = client.chat.completions.create(
+                model='deepseek-v4-flash',
+                max_tokens=max_tokens,
+                temperature=0.2,
+                messages=[{'role': 'system', 'content': system}] + messages,
+            )
+            text = resp.choices[0].message.content.strip()
+            if text:
+                text = _re.sub(r'^```(?:json)?\s*', '', text)
+                text = _re.sub(r'\s*```$', '', text)
+                return text
+            last_err = f'empty response (finish={resp.choices[0].finish_reason})'
+        except Exception as e:
+            last_err = str(e)
+        if attempt < 2:
+            _time.sleep(2 ** attempt)  # 1s, 2s backoff
+    raise RuntimeError(f'DeepSeek API failed after 3 retries: {last_err}')
 
 
 @app.route('/outreach', methods=['GET', 'POST'])
