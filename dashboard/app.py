@@ -1427,6 +1427,50 @@ def _adapt_cv_pdf(pdf_path: str, changes: dict) -> str:
     return out_name
 
 
+def _parse_deepseek_json(text: str) -> dict:
+    """Parse JSON from DeepSeek response, handling common LLM issues."""
+    import json as _json
+    
+    text = text.strip()
+    
+    # Try strict parse first
+    try:
+        return _json.loads(text)
+    except _json.JSONDecodeError:
+        pass
+    
+    # Try to find JSON in markdown code fences
+    m = _re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, _re.DOTALL)
+    if m:
+        try:
+            return _json.loads(m.group(1))
+        except _json.JSONDecodeError:
+            pass
+    
+    # Try to find any {...} block
+    m = _re.search(r'(\{.*\})', text, _re.DOTALL)
+    if m:
+        candidate = m.group(1)
+        # Fix trailing commas (most common LLM issue)
+        candidate = _re.sub(r',\s*}', '}', candidate)
+        candidate = _re.sub(r',\s*]', ']', candidate)
+        try:
+            return _json.loads(candidate)
+        except _json.JSONDecodeError:
+            pass
+    
+    # Last resort: fix unescaped control chars and try
+    cleaned = _re.sub(r'[\x00-\x1f]', '', text)
+    cleaned = _re.sub(r',\s*}', '}', cleaned)
+    cleaned = _re.sub(r',\s*]', ']', cleaned)
+    try:
+        return _json.loads(cleaned)
+    except _json.JSONDecodeError:
+        pass
+    
+    raise _json.JSONDecodeError(f"Cannot parse DeepSeek response as JSON", text, 0)
+
+
 def _wrap_text(text: str, max_chars: int = 95) -> list:
     """Wrap text to fit within max_chars per line, breaking at word boundaries."""
     words = text.split()
@@ -1515,7 +1559,7 @@ IMPORTANT rules:
                     max_tokens=4096,
                 )
                 
-                parsed = json.loads(result)
+                parsed = _parse_deepseek_json(result)
                 analysis = parsed.get('analysis', {})
                 changes = parsed
                 
