@@ -4,3 +4,4 @@ requests>=2.32
 anthropic>=0.32
 google-auth>=2.0
 google-api-python-client>=2.0
+openai>=1.0
