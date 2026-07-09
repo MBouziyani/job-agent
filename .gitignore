@@ -1,6 +1,7 @@
 .env
 .env.save
-data/jobs.db
+data/jobs.db*
+data/cv_adapted/
 __pycache__/
 *.pyc
 *.pyo
@@ -9,4 +10,3 @@ __pycache__/
 .venv/
 venv/
 credentials.json
-*.db-wal\n*.db-shm\n__pycache__/\n*.pyc
