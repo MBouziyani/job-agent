@@ -1,1 +1,0 @@
-# Nightly auto-sync script
