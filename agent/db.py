@@ -212,6 +212,7 @@ def get_companies_for_draft(conn: sqlite3.Connection) -> list[dict]:
         FROM companies c
         JOIN contacts ct ON ct.company_id = c.id
         WHERE c.qualified = 1
+          AND ct.verified = 1
           AND NOT EXISTS (SELECT 1 FROM emails WHERE emails.company_id = c.id)
         ORDER BY c.remote_score DESC
     """).fetchall()
