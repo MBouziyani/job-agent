@@ -1143,6 +1143,49 @@ def stats():
                            error=None)
 
 
+@app.route('/jobs')
+def jobs():
+    region = request.args.get('region', 'worldwide')
+    if region not in ('morocco', 'worldwide'):
+        region = 'worldwide'
+    board = request.args.get('board', '')
+    loc = request.args.get('loc', '').strip()
+    try:
+        conn = _db()
+        boards = [r[0] for r in conn.execute(
+            'SELECT DISTINCT board FROM open_jobs WHERE board IS NOT NULL AND board != "" ORDER BY board'
+        ).fetchall()]
+
+        where = ["c.region = ?" if region == 'morocco' else "c.region != 'morocco'"]
+        params: list = []
+        if region == 'morocco':
+            params.append('morocco')
+        if board:
+            where.append('oj.board = ?')
+            params.append(board)
+        if loc:
+            where.append('(oj.location LIKE ? OR oj.title LIKE ?)')
+            like = f'%{loc}%'
+            params.extend([like, like])
+        wsql = ' AND '.join(where)
+
+        rows = conn.execute(f"""
+            SELECT oj.id, oj.title, oj.location, oj.url, oj.dept, oj.board,
+                   c.name AS company, c.domain, c.region, c.headcount
+            FROM open_jobs oj
+            JOIN companies c ON c.id = oj.company_id
+            WHERE {wsql}
+            ORDER BY c.headcount ASC NULLS LAST, oj.created_at DESC
+        """, params).fetchall()
+        conn.close()
+    except Exception as exc:
+        return render_template('jobs.html', error=str(exc), jobs=[],
+                               boards=[], board=board, loc=loc, region=region)
+
+    return render_template('jobs.html', jobs=rows, boards=boards,
+                           board=board, loc=loc, region=region, error=None)
+
+
 # ── LinkedIn Outreach ─────────────────────────────────────────────────────────
 
 import json as _json

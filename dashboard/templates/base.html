@@ -417,6 +417,7 @@
     <a href="/review"    {% if request.path == '/review' %}class="active"{% endif %}>Review</a>
     <a href="/companies" {% if request.path == '/companies' %}class="active"{% endif %}>Companies</a>
     <a href="/stats"     {% if request.path == '/stats' %}class="active"{% endif %}>Stats</a>
+    <a href="/jobs"      {% if request.path == '/jobs' %}class="active"{% endif %}>Open Jobs</a>
     <a href="/settings"  {% if request.path == '/settings' %}class="active"{% endif %}>Settings</a>
     <div class="region-switch" style="margin-left:auto;margin-bottom:0;">
       {% set reg = region if region is defined else 'worldwide' %}

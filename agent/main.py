@@ -13,6 +13,8 @@ from qualifier import run as qualify
 from reply_monitor import run as check_replies
 from scraper import run_all
 from scraper_rekrute import run as scrape_rekrute
+from greenhouse_finder import run as find_open_jobs
+from headcount import run as estimate_headcount
 from email_verifier import run as verify_emails
 from website_finder import run as find_site_contacts
 
@@ -40,6 +42,12 @@ def run_pipeline() -> None:
         logger.info('ReKrute (Morocco) complete — %s', rk_results)
         qual_results = qualify(conn, cfg)
         logger.info('Qualification complete — %s', qual_results)
+
+        hc_results = estimate_headcount(conn, cfg)
+        logger.info('Headcount estimation complete — %s', hc_results)
+
+        open_job_results = find_open_jobs(conn, cfg)
+        logger.info('Open jobs (Greenhouse/Lever) complete — %s', open_job_results)
 
         finder_results = find_contacts(conn, cfg)
         logger.info('Finder complete — %s', finder_results)

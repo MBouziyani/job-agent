@@ -73,6 +73,20 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 status       TEXT DEFAULT 'pending',
                 FOREIGN KEY (email_id) REFERENCES emails(id)
             );
+
+            CREATE TABLE IF NOT EXISTS open_jobs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id   INTEGER NOT NULL,
+                title        TEXT,
+                location     TEXT,
+                url          TEXT UNIQUE,
+                dept         TEXT,
+                board        TEXT,
+                board_slug   TEXT,
+                matched      INTEGER DEFAULT 0,
+                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id)
+            );
         """)
     # Migration: add qualified column to databases created before Session 2
     try:

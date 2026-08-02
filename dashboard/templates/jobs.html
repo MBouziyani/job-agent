@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Open Jobs — Job Agent{% endblock %}
+
+{% block content %}
+{% if error %}
+  <div class="banner banner-error">DB error: {{ error }}</div>
+{% endif %}
+
+<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+  <h2 style="font-size:18px;font-weight:600">🎯 Open Jobs</h2>
+  <span style="font-size:12px;color:var(--muted)">{{ jobs|length }} jobs — click <b style="color:var(--green)">Apply</b> to go to the real offer</span>
+</div>
+
+<!-- Board + region filters -->
+<form method="get" action="/jobs" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0;padding:10px 14px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+  <input type="hidden" name="region" value="{{ region }}">
+  <label style="font-size:12px;font-weight:500;color:var(--muted)">Board:</label>
+  <select name="board" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;font-size:13px">
+    <option value="">All boards</option>
+    {% for b in boards %}
+      <option value="{{ b }}" {% if board == b %}selected{% endif %}>{{ b|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <label style="font-size:12px;font-weight:500;color:var(--muted);margin-left:8px">Location:</label>
+  <input type="text" name="loc" placeholder="e.g. Remote, Paris, Casablanca" value="{{ loc or '' }}"
+         style="width:200px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 6px;font-size:13px">
+  <button type="submit" class="btn-sm" style="background:var(--accent);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer">Filter</button>
+  <a href="/jobs" style="font-size:12px;color:var(--muted);margin-left:4px">Clear</a>
+</form>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Company</th>
+        <th>Title</th>
+        <th>Location</th>
+        <th>Board</th>
+        <th>Region</th>
+        <th>Apply</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td style="font-weight:500">
+          {{ j.company }}
+          {% if j.domain %}<div style="font-size:11px;color:var(--muted)">{{ j.domain }}</div>{% endif %}
+        </td>
+        <td>{{ j.title }}{% if j.dept %}<div style="font-size:11px;color:var(--muted)">{{ j.dept }}</div>{% endif %}</td>
+        <td style="font-size:13px;color:var(--muted)">{{ j.location or '—' }}</td>
+        <td><span class="badge {{ 'bm' if j.board == 'greenhouse' else ('bl' if j.board == 'lever' else 'br') }}">{{ j.board }}</span></td>
+        <td><span class="badge {{ 'bg' if j.region == 'morocco' else 'bm' }}">{{ j.region }}</span></td>
+        <td>
+          {% if j.url %}
+          <a href="{{ j.url }}" target="_blank" rel="noopener"
+             style="display:inline-block;background:var(--green);color:#000;font-weight:600;font-size:12px;padding:4px 12px;border-radius:4px;text-decoration:none">Apply ↗</a>
+          {% else %}<span style="color:var(--muted);font-size:12px">no link</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">No jobs found. Run the pipeline or clear filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
