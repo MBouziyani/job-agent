@@ -443,28 +443,32 @@ def index():
 @app.route('/pipeline')
 def pipeline():
     msg = request.args.get('msg')
+    region = request.args.get('region', 'worldwide')
+    if region not in ('morocco', 'worldwide'):
+        region = 'worldwide'
+    rwhere = "AND region = 'morocco'" if region == 'morocco' else "AND region != 'morocco'"
     try:
         conn = _db()
 
         # 1. Discovered — companies where qualified is NULL
         discovered = conn.execute(
-            'SELECT * FROM companies WHERE qualified IS NULL ORDER BY created_at DESC'
+            f'SELECT * FROM companies WHERE qualified IS NULL {rwhere} ORDER BY created_at DESC'
         ).fetchall()
 
         # 2. Qualified — qualified=1, no contact yet
-        qualified = conn.execute("""
+        qualified = conn.execute(f"""
             SELECT * FROM companies
-            WHERE qualified = 1
+            WHERE qualified = 1 {rwhere}
               AND NOT EXISTS (SELECT 1 FROM contacts WHERE contacts.company_id = companies.id)
             ORDER BY remote_score DESC
         """).fetchall()
 
         # 3. Contacts Found — qualified + has contact, no email yet
-        contacts_found = conn.execute("""
+        contacts_found = conn.execute(f"""
             SELECT c.*, ct.email, ct.name AS contact_name, ct.role
             FROM companies c
             JOIN contacts ct ON ct.company_id = c.id
-            WHERE c.qualified = 1
+            WHERE c.qualified = 1 {rwhere.replace('region', 'c.region')}
               AND NOT EXISTS (
                   SELECT 1 FROM emails
                   WHERE emails.company_id = c.id
@@ -474,67 +478,67 @@ def pipeline():
         """).fetchall()
 
         # 4. Draft — emails with status='draft'
-        draft_emails = conn.execute("""
+        draft_emails = conn.execute(f"""
             SELECT e.*, c.name AS company_name, c.domain AS company_domain,
                    ct.name AS contact_name, ct.email AS contact_email
             FROM emails e
             JOIN companies c ON c.id = e.company_id
             LEFT JOIN contacts ct ON ct.id = e.contact_id
-            WHERE e.status = 'draft'
+            WHERE e.status = 'draft' {rwhere.replace('region', 'c.region')}
             ORDER BY e.created_at DESC
         """).fetchall()
 
         # 5. Sent — emails with status='sent'
-        sent_emails = conn.execute("""
+        sent_emails = conn.execute(f"""
             SELECT e.id, e.sent_at, e.pipeline_stage, c.name AS company_name,
                    c.domain AS company_domain, ct.name AS contact_name,
                    ct.email AS contact_email
             FROM emails e
             JOIN companies c ON c.id = e.company_id
             LEFT JOIN contacts ct ON ct.id = e.contact_id
-            WHERE e.status = 'sent'
+            WHERE e.status = 'sent' {rwhere.replace('region', 'c.region')}
             ORDER BY e.sent_at DESC
         """).fetchall()
 
         # 6. Replied — emails with status='replied'
-        replied_emails = conn.execute("""
+        replied_emails = conn.execute(f"""
             SELECT e.id, e.sent_at, e.pipeline_stage, c.name AS company_name,
                    c.domain AS company_domain, ct.name AS contact_name,
                    ct.email AS contact_email
             FROM emails e
             JOIN companies c ON c.id = e.company_id
             LEFT JOIN contacts ct ON ct.id = e.contact_id
-            WHERE e.status = 'replied'
+            WHERE e.status = 'replied' {rwhere.replace('region', 'c.region')}
             ORDER BY e.sent_at DESC
         """).fetchall()
 
         # 7. Screening/Interview
-        screening_emails = conn.execute("""
+        screening_emails = conn.execute(f"""
             SELECT e.id, e.sent_at, e.status AS email_status, e.pipeline_stage,
                    c.name AS company_name, c.domain AS company_domain,
                    ct.name AS contact_name, ct.email AS contact_email
             FROM emails e
             JOIN companies c ON c.id = e.company_id
             LEFT JOIN contacts ct ON ct.id = e.contact_id
-            WHERE e.status IN ('screening', 'interview')
+            WHERE e.status IN ('screening', 'interview') {rwhere.replace('region', 'c.region')}
             ORDER BY e.sent_at DESC
         """).fetchall()
 
         # 8. Offer/Rejected
-        terminal_emails = conn.execute("""
+        terminal_emails = conn.execute(f"""
             SELECT e.id, e.sent_at, e.status AS email_status, e.pipeline_stage,
                    c.name AS company_name, c.domain AS company_domain,
                    ct.name AS contact_name, ct.email AS contact_email
             FROM emails e
             JOIN companies c ON c.id = e.company_id
             LEFT JOIN contacts ct ON ct.id = e.contact_id
-            WHERE e.status IN ('offer', 'rejected')
+            WHERE e.status IN ('offer', 'rejected') {rwhere.replace('region', 'c.region')}
             ORDER BY e.sent_at DESC
         """).fetchall()
 
         conn.close()
     except Exception as exc:
-        return render_template('pipeline.html', error=str(exc), msg=None,
+        return render_template('pipeline.html', error=str(exc), msg=None, region=region,
                                discovered=[], qualified=[], contacts_found=[],
                                draft_emails=[], sent_emails=[], replied_emails=[],
                                screening_emails=[], terminal_emails=[])
@@ -548,7 +552,7 @@ def pipeline():
                            replied_emails=replied_emails,
                            screening_emails=screening_emails,
                            terminal_emails=terminal_emails,
-                           msg=msg,
+                           msg=msg, region=region,
                            error=None)
 
 
@@ -1063,40 +1067,44 @@ def set_timezone(company_id):
 
 @app.route('/stats')
 def stats():
+    region = request.args.get('region', 'worldwide')
+    if region not in ('morocco', 'worldwide'):
+        region = 'worldwide'
+    rwhere = "AND region = 'morocco'" if region == 'morocco' else "AND region != 'morocco'"
     try:
         conn = _db()
 
         def scalar(sql):
             return conn.execute(sql).fetchone()[0] or 0
 
-        total     = scalar('SELECT COUNT(*) FROM companies')
-        rejected  = scalar('SELECT COUNT(*) FROM companies WHERE qualified = 0')
+        total     = scalar(f'SELECT COUNT(*) FROM companies WHERE 1=1 {rwhere}')
+        rejected  = scalar(f'SELECT COUNT(*) FROM companies WHERE qualified = 0 {rwhere}')
         avg_score = conn.execute(
-            'SELECT AVG(remote_score) FROM companies WHERE qualified IS NOT NULL'
+            f'SELECT AVG(remote_score) FROM companies WHERE qualified IS NOT NULL {rwhere}'
         ).fetchone()[0]
 
         totals = {
             'total':          total,
-            'qualified':      scalar('SELECT COUNT(*) FROM companies WHERE qualified = 1'),
+            'qualified':      scalar(f'SELECT COUNT(*) FROM companies WHERE qualified = 1 {rwhere}'),
             'rejected':       rejected,
-            'pending':        scalar('SELECT COUNT(*) FROM companies WHERE qualified IS NULL'),
-            'with_domain':    scalar('SELECT COUNT(*) FROM companies WHERE domain IS NOT NULL'),
-            'contacts':       scalar('SELECT COUNT(*) FROM contacts'),
-            'sent':           scalar("SELECT COUNT(*) FROM emails WHERE status = 'sent'"),
-            'replied':        scalar("SELECT COUNT(*) FROM emails WHERE status = 'replied'"),
+            'pending':        scalar(f'SELECT COUNT(*) FROM companies WHERE qualified IS NULL {rwhere}'),
+            'with_domain':    scalar(f'SELECT COUNT(*) FROM companies WHERE domain IS NOT NULL {rwhere}'),
+            'contacts':       scalar(f"SELECT COUNT(*) FROM contacts ct JOIN companies c ON c.id = ct.company_id WHERE 1=1 {rwhere.replace('region', 'c.region')}"),
+            'sent':           scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'sent' {rwhere.replace('region', 'c.region')}"),
+            'replied':        scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'replied' {rwhere.replace('region', 'c.region')}"),
             'rejection_rate': round(rejected / total * 100, 1) if total > 0 else 0,
             'avg_score':      round(avg_score, 1) if avg_score is not None else 0,
         }
 
         # Pipeline stage stats
         ps = {
-            'draft':      scalar("SELECT COUNT(*) FROM emails WHERE status = 'draft'"),
-            'sent':       scalar("SELECT COUNT(*) FROM emails WHERE status = 'sent'"),
-            'replied':    scalar("SELECT COUNT(*) FROM emails WHERE status = 'replied'"),
-            'screening':  scalar("SELECT COUNT(*) FROM emails WHERE status = 'screening'"),
-            'interview':  scalar("SELECT COUNT(*) FROM emails WHERE status = 'interview'"),
-            'offer':      scalar("SELECT COUNT(*) FROM emails WHERE status = 'offer'"),
-            'rejected_email': scalar("SELECT COUNT(*) FROM emails WHERE status = 'rejected'"),
+            'draft':      scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'draft' {rwhere.replace('region', 'c.region')}"),
+            'sent':       scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'sent' {rwhere.replace('region', 'c.region')}"),
+            'replied':    scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'replied' {rwhere.replace('region', 'c.region')}"),
+            'screening':  scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'screening' {rwhere.replace('region', 'c.region')}"),
+            'interview':  scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'interview' {rwhere.replace('region', 'c.region')}"),
+            'offer':      scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'offer' {rwhere.replace('region', 'c.region')}"),
+            'rejected_email': scalar(f"SELECT COUNT(*) FROM emails e JOIN companies c ON c.id = e.company_id WHERE e.status = 'rejected' {rwhere.replace('region', 'c.region')}"),
         }
 
         # Conversion rates
@@ -1108,20 +1116,20 @@ def stats():
         cr['offer_rate']     = round(ps['offer'] / ps['interview'] * 100, 1) if ps['interview'] > 0 else 0
 
         by_source = conn.execute(
-            'SELECT source, COUNT(*) n FROM companies GROUP BY source ORDER BY n DESC'
+            f'SELECT source, COUNT(*) n FROM companies WHERE 1=1 {rwhere} GROUP BY source ORDER BY n DESC'
         ).fetchall()
 
-        top = conn.execute("""
+        top = conn.execute(f"""
             SELECT name, domain, remote_score, source
             FROM companies
-            WHERE qualified = 1
+            WHERE qualified = 1 {rwhere}
             ORDER BY remote_score DESC
             LIMIT 15
         """).fetchall()
 
         conn.close()
     except Exception as exc:
-        return render_template('stats.html', error=str(exc),
+        return render_template('stats.html', error=str(exc), region=region,
                                totals={}, by_source=[], top=[],
                                pipeline_stats={}, conversion_rates={})
 
@@ -1131,6 +1139,7 @@ def stats():
                            top=top,
                            pipeline_stats=ps,
                            conversion_rates=cr,
+                           region=region,
                            error=None)
 
 

@@ -377,6 +377,35 @@
     }
     .filter-tab:hover { color: var(--text); border-color: var(--muted); }
     .filter-tab.active { color: var(--text); border-color: var(--accent); background: rgba(88,166,255,.1); }
+    /* ── region toggle ── */
+    .region-switch {
+      display: flex;
+      gap: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+      margin: 0 0 16px;
+      width: fit-content;
+    }
+    .region-btn {
+      padding: 6px 18px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      color: var(--muted);
+      transition: color .15s, background .15s;
+    }
+    .region-btn:hover { color: var(--text); }
+    .region-btn.active {
+      color: #000;
+      background: var(--accent);
+    }
+    .region-btn.morocco.active {
+      color: #000;
+      background: var(--green);
+    }
   </style>
 </head>
 <body>
@@ -389,6 +418,13 @@
     <a href="/companies" {% if request.path == '/companies' %}class="active"{% endif %}>Companies</a>
     <a href="/stats"     {% if request.path == '/stats' %}class="active"{% endif %}>Stats</a>
     <a href="/settings"  {% if request.path == '/settings' %}class="active"{% endif %}>Settings</a>
+    <div class="region-switch" style="margin-left:auto;margin-bottom:0;">
+      {% set reg = region if region is defined else 'worldwide' %}
+      <a class="region-btn {% if reg == 'worldwide' %}active{% endif %}"
+         href="{{ request.path }}?region=worldwide">🌍 Worldwide</a>
+      <a class="region-btn morocco {% if reg == 'morocco' %}active{% endif %}"
+         href="{{ request.path }}?region=morocco">🇲🇦 Morocco</a>
+    </div>
   </nav>
 
   <div class="page">

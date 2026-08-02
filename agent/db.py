@@ -104,6 +104,12 @@ def init_db(db_path: Path = DB_PATH) -> None:
         conn.commit()
     except Exception:
         pass
+    # Migration: add region column — 'morocco' for ReKrute/MA targets, 'worldwide' default
+    try:
+        conn.execute("ALTER TABLE companies ADD COLUMN region TEXT DEFAULT 'worldwide'")
+        conn.commit()
+    except Exception:
+        pass
     # Migration: add pipeline_stage to emails (for DBs created before this update)
     try:
         conn.execute("ALTER TABLE emails ADD COLUMN pipeline_stage TEXT DEFAULT 'sent'")

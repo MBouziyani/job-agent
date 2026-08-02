@@ -107,8 +107,8 @@ def run(conn: sqlite3.Connection, cfg: dict[str, Any]) -> dict[str, int]:
             company_id = row[0]
         else:
             cur = conn.execute(
-                "INSERT INTO companies (name, source, qualified, remote_score) "
-                "VALUES (?, 'rekrute', NULL, 0)",
+                "INSERT INTO companies (name, source, qualified, remote_score, region) "
+                "VALUES (?, 'rekrute', NULL, 0, 'morocco')",
                 (company,),
             )
             company_id = cur.lastrowid
