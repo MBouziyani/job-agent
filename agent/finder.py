@@ -132,29 +132,6 @@ def _apollo_search(domain: str, api_key: str) -> list:
     return []
 
 
-def _guess_email(domain: str, company_name: str) -> list:
-    """Last resort: generate likely email patterns for common roles.
-    Uses common patterns like contact@, hello@, careers@, jobs@.
-    """
-    patterns = [
-        'hello@{d}', 'contact@{d}', 'careers@{d}', 'jobs@{d}',
-        'team@{d}', 'info@{d}', 'work@{d}', 'hiring@{d}',
-    ]
-    results = []
-    for pattern in patterns:
-        email = pattern.replace('{d}', domain)
-        role = 'General Contact' if 'contact' in pattern or 'hello' in pattern or 'info' in pattern else 'Recruiting'
-        results.append({
-            'value': email,
-            'first_name': '',
-            'last_name': '',
-            'position': role,
-            'type': 'personal',
-            'confidence': 10,  # low confidence — guessed, not verified
-        })
-    return results
-
-
 def run(conn, cfg: dict) -> dict:
     hunter_key = os.environ.get('HUNTER_API_KEY')
     apollo_key = os.environ.get('APOLLO_API_KEY')
