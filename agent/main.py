@@ -12,6 +12,7 @@ from auto_sender import run as auto_send
 from qualifier import run as qualify
 from reply_monitor import run as check_replies
 from scraper import run_all
+from scraper_rekrute import run as scrape_rekrute
 from email_verifier import run as verify_emails
 from website_finder import run as find_site_contacts
 
@@ -35,6 +36,8 @@ def run_pipeline() -> None:
             'Scrape complete — %s (total=%d)',
             scrape_results, sum(scrape_results.values()),
         )
+        rk_results = scrape_rekrute(conn, cfg)
+        logger.info('ReKrute (Morocco) complete — %s', rk_results)
         qual_results = qualify(conn, cfg)
         logger.info('Qualification complete — %s', qual_results)
 
