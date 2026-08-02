@@ -129,16 +129,20 @@ def run(conn, cfg: dict) -> dict:
             skipped += 1
             continue
 
-        insert_email_draft(
-            conn,
-            email['company_id'],
-            email['contact_id'],
-            result['subject'],
-            result['body'],
-            sequence_step=2,
-        )
-        drafted += 1
-        logger.info('FOLLOWUP1 %-30s → "%s"', email['company_name'], result['subject'])
+        try:
+            insert_email_draft(
+                conn,
+                email['company_id'],
+                email['contact_id'],
+                result['subject'],
+                result['body'],
+                sequence_step=2,
+            )
+            drafted += 1
+            logger.info('FOLLOWUP1 %-30s -> "%s"', email['company_name'], result['subject'])
+        except Exception as exc:
+            skipped += 1
+            logger.warning('FOLLOWUP1 failed for %s: %s', email['company_name'], exc)
         time.sleep(0.5)
 
     # Step 3 — final follow-up (after `days * 2` days)
@@ -151,16 +155,20 @@ def run(conn, cfg: dict) -> dict:
             skipped += 1
             continue
 
-        insert_email_draft(
-            conn,
-            email['company_id'],
-            email['contact_id'],
-            result['subject'],
-            result['body'],
-            sequence_step=3,
-        )
-        drafted += 1
-        logger.info('FOLLOWUP2 %-30s → "%s" (final)', email['company_name'], result['subject'])
+        try:
+            insert_email_draft(
+                conn,
+                email['company_id'],
+                email['contact_id'],
+                result['subject'],
+                result['body'],
+                sequence_step=3,
+            )
+            drafted += 1
+            logger.info('FOLLOWUP2 %-30s -> "%s" (final)', email['company_name'], result['subject'])
+        except Exception as exc:
+            skipped += 1
+            logger.warning('FOLLOWUP2 failed for %s: %s', email['company_name'], exc)
         time.sleep(0.5)
 
     logger.info('Followup done — drafted=%d skipped=%d', drafted, skipped)

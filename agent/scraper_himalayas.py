@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 HIMALAYAS_API = 'https://himalayas.app/jobs/api'
 HIMALAYAS_LIMIT = 20
 HIMALAYAS_MAX_TOTAL = 60
+HIMALAYAS_MAX_PAGES = 50  # Stop after 50 pages (1000 companies) to avoid infinite loops
 
 # Only insert companies with dev/engineering parent categories or job titles
 DEV_KEYWORDS = re.compile(
@@ -62,8 +63,10 @@ def scrape_himalayas(conn, cfg: dict) -> int:
     offset = 0
     new_count = 0
     seen: set[str] = set()
+    page_count = 0
 
-    while new_count < HIMALAYAS_MAX_TOTAL:
+    while new_count < HIMALAYAS_MAX_TOTAL and page_count < HIMALAYAS_MAX_PAGES:
+        page_count += 1
         try:
             resp = requests.get(
                 HIMALAYAS_API,
