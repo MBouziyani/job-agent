@@ -14,6 +14,7 @@ from reply_monitor import run as check_replies
 from scraper import run_all
 from scraper_rekrute import run as scrape_rekrute
 from greenhouse_finder import run as find_open_jobs
+from apply_mailer import run as draft_applications
 from headcount import run as estimate_headcount
 from email_verifier import run as verify_emails
 from website_finder import run as find_site_contacts
@@ -48,6 +49,9 @@ def run_pipeline() -> None:
 
         open_job_results = find_open_jobs(conn, cfg)
         logger.info('Open jobs (Greenhouse/Lever) complete — %s', open_job_results)
+
+        app_results = draft_applications(conn, cfg)
+        logger.info('Application drafts (Plan B) complete — %s', app_results)
 
         finder_results = find_contacts(conn, cfg)
         logger.info('Finder complete — %s', finder_results)
