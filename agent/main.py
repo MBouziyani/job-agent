@@ -13,6 +13,7 @@ from qualifier import run as qualify
 from reply_monitor import run as check_replies
 from scraper import run_all
 from email_verifier import run as verify_emails
+from website_finder import run as find_site_contacts
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +40,9 @@ def run_pipeline() -> None:
 
         finder_results = find_contacts(conn, cfg)
         logger.info('Finder complete — %s', finder_results)
+
+        site_results = find_site_contacts(conn, cfg)
+        logger.info('Website finder complete — %s', site_results)
 
         verify_results = verify_emails(conn, cfg)
         logger.info('Email verification complete — %s', verify_results)

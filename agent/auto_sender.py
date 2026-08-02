@@ -139,13 +139,15 @@ def _looks_valid_email(email: str) -> bool:
     local, domain = email.rsplit('@', 1)
     if not domain or '.' not in domain:
         return False
-    # Reject generic/no-reply addresses
+    # Reject only no-reply / notifications addresses (never monitored by humans)
     local_lower = local.lower().strip()
-    if local_lower in ('noreply', 'no-reply', 'no_reply', 'careers', 'jobs', 'hr', 'info', 'support', 'admin', 'contact', 'hello', 'team', 'mail', 'notifications'):
+    if re.search(r'(noreply|no.reply|donotreply|do_not_reply|notifications?)', local_lower):
         return False
-    # Reject suspicious patterns
-    if re.search(r'(noreply|no.reply|donotreply|do_not_reply)', local_lower):
+    # Reject low-value generic inboxes that spam-filter cold mail
+    if local_lower in ('info', 'contact', 'hello', 'support', 'admin', 'team', 'mail', 'office', 'sales', 'marketing', 'press', 'media', 'legal', 'billing', 'abuse', 'social', 'hi', 'enquiries', 'enquiry', 'general', 'pr'):
         return False
+    # Recruiting inboxes (jobs@, careers@, talent@, hr@...) are PUBLISHED on
+    # purpose to receive applications — always allowed.
     return True
 
 
@@ -185,6 +187,7 @@ def run(conn=None, cfg: dict | None = None) -> dict:
             JOIN companies c  ON c.id  = e.company_id
             LEFT JOIN contacts ct ON ct.id = e.contact_id
             WHERE e.status = 'draft'
+              AND ct.verified = 1
             ORDER BY c.remote_score DESC
         """).fetchall()
 
