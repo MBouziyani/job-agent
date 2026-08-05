@@ -188,6 +188,7 @@ def run(conn=None, cfg: dict | None = None) -> dict:
             LEFT JOIN contacts ct ON ct.id = e.contact_id
             WHERE e.status = 'draft'
               AND ct.verified = 1
+              AND ct.source IN ('website', 'scraped', 'hunter', 'rekrute')
             ORDER BY c.remote_score DESC
         """).fetchall()
 
