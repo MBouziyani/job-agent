@@ -271,7 +271,7 @@ def run(conn: sqlite3.Connection, cfg: dict[str, Any]) -> dict[str, int]:
                 inserted += 1
             logger.info(
                 'Website: %s — %d emails found, %d new (%s)',
-                company['name'], len(contacts), inserted if inserted else 'see total',
+                company['name'], len(contacts), inserted,
                 ', '.join(c['email'] for c in contacts[:3]),
             )
             conn.commit()
