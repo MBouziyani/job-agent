@@ -72,12 +72,19 @@ def _verify_single(email: str) -> tuple[str, bool, str | None]:
 
 
 def run(conn: sqlite3.Connection, cfg: dict[str, Any]) -> dict[str, int]:
-    """Verify all unverified contacts via DNS. Updates verified=1 in DB for valid ones."""
-    
-    # Get all unverified contacts with non-generic emails
+    """Verify all unverified contacts via DNS. Updates verified=1 in DB for valid ones.
+
+    ONLY verifies contacts from TRUSTED sources (published emails): website,
+    scraped, hunter, rekrute. Research-source contacts (hermes-web, web_research,
+    hermes-research, hermes) are NEVER re-verified — they were guessed and cause
+    bounces. This is the key guard against bounces.
+    """
+
+    # Get all unverified contacts from trusted sources only
     cur = conn.execute("""
         SELECT id, email FROM contacts
         WHERE verified = 0
+          AND source IN ('website', 'scraped', 'hunter', 'rekrute')
           AND email IS NOT NULL
           AND email NOT LIKE 'hello@%%'
           AND email NOT LIKE 'info@%%'

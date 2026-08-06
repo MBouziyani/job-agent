@@ -133,7 +133,14 @@ def _domain_has_mx(domain: str) -> bool:
 
 
 def _looks_valid_email(email: str) -> bool:
-    """Heuristic check — rejects obviously invalid patterns."""
+    """Heuristic check — rejects obviously invalid patterns.
+
+    Only rejects: malformed, no-reply (never monitored), and obviously
+    unusable addresses. Generic inboxes (info@, sales@, contact@...) that
+    companies PUBLISH on their sites/job boards are valid application
+    targets — they may forward to real people. Bounce risk is already
+    controlled at the source (only published contacts are verified).
+    """
     if not email or '@' not in email:
         return False
     local, domain = email.rsplit('@', 1)
@@ -143,11 +150,8 @@ def _looks_valid_email(email: str) -> bool:
     local_lower = local.lower().strip()
     if re.search(r'(noreply|no.reply|donotreply|do_not_reply|notifications?)', local_lower):
         return False
-    # Reject low-value generic inboxes that spam-filter cold mail
-    if local_lower in ('info', 'contact', 'hello', 'support', 'admin', 'team', 'mail', 'office', 'sales', 'marketing', 'press', 'media', 'legal', 'billing', 'abuse', 'social', 'hi', 'enquiries', 'enquiry', 'general', 'pr'):
-        return False
-    # Recruiting inboxes (jobs@, careers@, talent@, hr@...) are PUBLISHED on
-    # purpose to receive applications — always allowed.
+    # Everything else (including generic inboxes like sales@/info@) is allowed —
+    # they were published by the company and are valid application targets.
     return True
 
 
